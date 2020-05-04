@@ -82,4 +82,4 @@ loop:
 
 SPRITE_OFFSET = (sprites and $3FFF) >> 6
 sprites:
-    !src "sprites.asm"
+    !src "sprites.inc"
