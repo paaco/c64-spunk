@@ -21,6 +21,8 @@
             sta $D025       ; MC1
             lda #9
             sta $D026       ; MC2
+            lda #5
+            sta $D027       ; C0
 
             ; enable sprites
             lda #%00000001
@@ -29,7 +31,7 @@
             sta $D01D       ; X-expand
             sta $D01C       ; MC
 
-            lda #255
+            lda #200
             sta $FC
 
             sei
@@ -51,7 +53,7 @@
             lda #>NMI
             sta $FFFB
 
-            lda #100        ; rasterline to trigger
+            lda #80         ; rasterline to trigger
             sta $D012
 
             lda $d011
@@ -76,20 +78,25 @@ loop:
 -           cmp $D012
             bne -
 
-            TOPY=100
+            TOPY=50
 
             lda #TOPY
 -           cmp $D012
             bne -
 
+            lda #$D
+            sta $D025       ; MC1
+            lda #%00000001
+            sta $D01D       ; X-expand
+
             lda $FC
             sta $D000       ; X0
-            lda #$01
+            lda #$00
             sta $D010       ; X-MSB
 
             lda #TOPY
             sta $D001       ; Y0
-            lda #SPRITE_OFFSET+0
+            lda #SPRITE_OFFSET+3
             sta $07F8       ; PTR0
 
             lda #TOPY+42
@@ -98,7 +105,7 @@ loop:
 
             lda #TOPY+42
             sta $D001       ; Y0
-            lda #SPRITE_OFFSET+0
+            lda #SPRITE_OFFSET+4
             sta $07F8       ; PTR0
 
             lda #TOPY+42+42
@@ -106,20 +113,44 @@ loop:
             bne -
 
             lda #TOPY+42+42
+            sta $D001       ; Y0
+            lda #SPRITE_OFFSET+0
+            sta $07F8       ; PTR0
+
+            lda #$0
+            sta $D025       ; MC1
+
+            lda #TOPY+42+42+1 ; delay to next line before disabling x-expand
+-           cmp $D012
+            bne -
+
+            lda #%00000000
+            sta $D01D       ; X-expand
+
+            lda $FC
+            clc
+            adc #12
+            sta $D000       ; X0
+
+            lda #TOPY+42+42+42
+-           cmp $D012
+            bne -
+
+            lda #TOPY+42+42+42
             sta $D001       ; Y0
             lda #SPRITE_OFFSET+1
             sta $07F8       ; PTR0
 
-            lda #TOPY+42+42+42
+            lda #TOPY+42+42+42+42
 -           cmp $D012
             bne -
 
-            lda #TOPY+42+42+42
+            lda #TOPY+42+42+42+42
             sta $D001       ; Y0
             lda #SPRITE_OFFSET+2
             sta $07F8       ; PTR0
 
-            dec $FC
+            ;dec $FC
             jmp loop
 
 ;----------------------------------------------------------------------------
