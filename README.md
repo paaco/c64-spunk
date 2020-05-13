@@ -1,5 +1,26 @@
 # c64-trees
 
+### Trees
+
+There are a maximum of 6 trees on screen, consisting of 5 sprites each.
+With y-expanding, they fill the entire screen.
+The upper 2 sprites are x-expanded making them even larger.
+
+If the sprites are consecutive in memory, you only need 1 byte of PTR and inc them each IRQ.
+
+Note that there are 2 player sprites that are weaved in between the 6 tree sprites because of priority.
+
+There are a number of IRQs:
+
+1. Set up all 8 sprites X, Y, ptrs and X- and Y- expansion (all but the player sprites) outside of the visible screen.
+
+2. Updates tree sprite ptrs and their Y offset.
+
+3. Updates tree sprite ptrs and their Y offset. Switch off x-expansion for the trees and fix their X-positions.
+
+4. TODO
+
+
 ### Assets
 
 Assets are drawn in Aseprite and saved as .png file. Custom converter Sprite2asm converts the png file based on instructions in the filename:
