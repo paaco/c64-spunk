@@ -1,0 +1,1 @@
+exomizer sfx systrim .cache/trees.prg -o trees.prg

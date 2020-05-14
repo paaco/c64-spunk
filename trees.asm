@@ -6,15 +6,22 @@
 ZP_TREEX = $10          ; 6 tree x-offsets in ZP for speed
 SPRITE_PTR = $07F8
 
-RASTERTOP=40            ; top rasterirq
+VIC_SPR_ENA = $D015
+VIC_SPR_DHEIGHT = $D017
+VIC_SPR_BEHIND = $D01B
+VIC_SPR_MC = $D01C
+VIC_SPR_DWIDTH = $D01D
+VIC_SPR_MC1 = $D025
+VIC_SPR_MC2 = $D026
+VIC_SPR_COL = $D027
+
+RASTERTOP=40            ; top raster irq
 TREETOPY=50             ; first y-position of trees
 
 *=$0801
 !byte $0c,$08,$b5,$07,$9e,$20,$32,$30,$36,$32,$00,$00,$00   ; sys 2062
 
 ;2062
-            jsr $E544       ; cls
-
 ;            $02A6/678:   Flag: TV Standard: $00 = NTSC, $01 = PAL
 ;            lda $02A6 ; needed for X-offset correction
 ;            sta $0428
@@ -23,30 +30,68 @@ TREETOPY=50             ; first y-position of trees
             sta $D020
             lda #8
             sta $D021
+            lda #5
+            sta $D023 ; Text MC2
+
+            ldx #0
+-           lda #34
+            sta $0400,x
+            sta $0500,x
+            sta $0600,x
+            sta $0700,x
+            lda #0+8
+            sta $DB00,x
+            inx
+            bne -
+
+            lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
+            sta $D018
+            lda #%00010000 ; Text MC + 38/40 columns + X-scroll
+            sta $D016
+
+            ; fill plants row
+            clc
+            ldx #0
+-           txa
+            sta $0400+22*40,x
+            sta $0400+22*40+11,x
+            sta $0400+22*40+22,x
+            adc #11
+            sta $0428+22*40,X
+            sta $0428+22*40+11,X
+            sta $0428+22*40+22,X
+            adc #11
+            sta $0450+22*40,X
+            sta $0450+22*40+11,X
+            sta $0450+22*40+22,X
+            inx
+            cpx #11
+            bne -
 
             lda #0
-            sta $D025       ; MC1
+            sta VIC_SPR_MC1
             lda #9
-            sta $D026       ; MC2
+            sta VIC_SPR_MC2
             ldx #5
-            stx $D027       ; C0
-            dex
-            stx $D028       ; C1
-            dex
-            stx $D029       ; C2
-            dex
-            stx $D02A       ; C3
-            dex
-            stx $D02B       ; C4
-            dex
-            stx $D02C       ; C5
+            stx VIC_SPR_COL+0
+            ;dex
+            stx VIC_SPR_COL+1
+            ldx #2
+            stx VIC_SPR_COL+2
+            ldx #7
+            stx VIC_SPR_COL+3
+            ldx #13
+            stx VIC_SPR_COL+4
+            ;dex
+            stx VIC_SPR_COL+5
 
             ; enable sprites
             lda #%00111111
-            sta $D015       ; enable
-            sta $D017       ; Y-expand
-            sta $D01D       ; X-expand
-            sta $D01C       ; MC
+            sta VIC_SPR_ENA
+            sta VIC_SPR_DHEIGHT
+            sta VIC_SPR_DWIDTH
+            sta VIC_SPR_MC
+            sta VIC_SPR_BEHIND ; TODO this is a HACK for now do properly
 
             ; init trees
             ldx #0
@@ -98,61 +143,31 @@ TREETOPY=50             ; first y-position of trees
 loop:       inc $0400
             jmp loop
 
-;             lda #TOPY+42+42
-; -           cmp $D012
-;             bne -
-
-;             lda #TOPY+42+42
-;             sta $D001       ; Y0
-;             lda #SPRITE_OFFSET+0
-;             sta $07F8       ; PTR0
-
-;             lda #$0
-;             sta $D025       ; MC1
-
-; ;             lda #TOPY+42+42+1 ; delay to next line before disabling x-expand
-; ; -           cmp $D012
-; ;             bne -
-
-;             lda #%00000000
-;             sta $D01D       ; X-expand
-;             dec $d021
-
-;             lda TreeX
-;             clc
-;             adc #12
-;             sta $D000       ; X0
-
-;             lda #TOPY+42+42+42
-; -           cmp $D012
-;             bne -
-
-;             lda #TOPY+42+42+42
-;             sta $D001       ; Y0
-;             lda #SPRITE_OFFSET+1
-;             sta $07F8       ; PTR0
-
-;             lda #TOPY+42+42+42+42
-; -           cmp $D012
-;             bne -
-
-;             lda #TOPY+42+42+42+42
-;             sta $D001       ; Y0
-;             lda #SPRITE_OFFSET+2
-;             sta $07F8       ; PTR0
 
 ;----------------------------------------------------------------------------
 ; DATA
 ;----------------------------------------------------------------------------
 
-TreeXL:     !byte <50,<100,<150,<200,<250,<300       ; 8-bit fixed point
-TreeXH:     !byte >50,>100,>150,>200,>250,>300       ; only 1-bit used (bit-9)
+; TODO: x-offsets should be 2 bytes: highest 8 bits in one (looks like x-value/2)
+; TODO: and lowest bit + 7 bits behind comma in another
+TreeXL:     !byte <10,<100,<150,<200,<250,<300       ; 8-bit fixed point
+TreeXH:     !byte >10,>100,>150,>200,>250,>300       ; only 1-bit used (bit-9)
 SprXMSB:    !byte $20                                ; precalculated from TreeXH
+; TODO: you need two versions of SprXMSB, one for the double width treetops and one for the trees
+
 
 ;----------------------------------------------------------------------------
 ; IRQs page align so only low-byte needs to change
 ;----------------------------------------------------------------------------
             !align 255,0,0
+
+; TODO: update SPR_MC1 to black
+; TODO: update scroll position
+; TODO: update sprites behind characters
+; TODO: reusable IRQ to update sprite pointers and Y-locations (3x)
+; TODO: reusable IRQ to set single VIC register (3x)
+; TODO: "copper bar" with: rasterline-to-trigger, IRQ-low-byte, value to set
+; TODO: make sure tree-leaves lowest row is same as top row from tree-stem
 
 ; update sprite pointers only
 IRQ_Two:
@@ -168,18 +183,82 @@ IRQ_Two:
             sta $D00B
 -           cmp $D012 ; wait till end of raster line
             bne -
-            lda #SPRITE_OFFSET+4
-            sta SPRITE_PTR+0
-            lda #SPRITE_OFFSET+4
-            sta SPRITE_PTR+1
-            lda #SPRITE_OFFSET+4
-            sta SPRITE_PTR+2
-            lda #SPRITE_OFFSET+4
-            sta SPRITE_PTR+3
-            lda #SPRITE_OFFSET+4
-            sta SPRITE_PTR+4
-            lda #SPRITE_OFFSET+4
-            sta SPRITE_PTR+5
+            inc SPRITE_PTR+0
+            inc SPRITE_PTR+1
+            inc SPRITE_PTR+2
+            inc SPRITE_PTR+3
+            inc SPRITE_PTR+4
+            inc SPRITE_PTR+5
+
+            ldy #TREETOPY+39+42
+            lda #<IRQ_Two_Copy
+            jmp END_IRQ
+
+
+; update sprite pointers, normal width sprites and fix X-offsets
+IRQ_Two_Copy:
+            sta IRQ_A
+            sty IRQ_Y
+
+            lda #TREETOPY+42+42
+            sta $D001
+            sta $D003
+            sta $D005
+            sta $D007
+            sta $D009
+            sta $D00B
+
+            nop ; make sure changing width happens outside the screen
+            nop
+
+            lda #%00000000
+            sta VIC_SPR_DWIDTH
+
+            lda #<(10+12)
+            sta $D000       ; X0
+            lda #<(100+12)
+            sta $D002       ; X1
+            lda #<(150+12)
+            sta $D004       ; X2
+            lda #<(200+12)
+            sta $D006       ; X3
+            lda #<(250+12)
+            sta $D008       ; X4
+            lda #<(300+12)
+            sta $D00A       ; X5
+            lda #$30
+            sta $D010       ; X-MSB
+
+            inc SPRITE_PTR+0
+            inc SPRITE_PTR+1
+            inc SPRITE_PTR+2
+            inc SPRITE_PTR+3
+            inc SPRITE_PTR+4
+            inc SPRITE_PTR+5
+
+            ldy #TREETOPY+42+42+40
+            lda #<IRQ_Three
+            jmp END_IRQ
+
+IRQ_Three:
+            sta IRQ_A
+            sty IRQ_Y
+
+            lda #TREETOPY+42+42+42+20 ; TODO: fix this HACK to go into plants (no 5th sprite yet)
+            sta $D001
+            sta $D003
+            sta $D005
+            sta $D007
+            sta $D009
+            sta $D00B
+-           cmp $D012 ; wait till end of raster line
+            bne -
+            inc SPRITE_PTR+0
+            inc SPRITE_PTR+1
+            inc SPRITE_PTR+2
+            inc SPRITE_PTR+3
+            inc SPRITE_PTR+4
+            inc SPRITE_PTR+5
 
             ldy #RASTERTOP
             lda #<IRQ_Top
@@ -190,12 +269,10 @@ IRQ_Top:
             sta IRQ_A
             sty IRQ_Y
 
-;            inc $D020               ; DEBUG
-
-            lda #$D
-            sta $D025       ; MC1
+            ; lda #$D
+            ; sta VIC_SPR_MC1
             lda #%00111111
-            sta $D01D       ; X-expand
+            sta VIC_SPR_DWIDTH
 
             lda ZP_TREEX+0
             sta $D000       ; X0
@@ -217,26 +294,24 @@ IRQ_Top:
             sta $D010       ; X-MSB
 
             lda #TREETOPY
-            sta $D001       ; Y0
-            sta $D003       ; Y1
-            sta $D005       ; Y2
-            sta $D007       ; Y3
-            sta $D009       ; Y4
-            sta $D00B       ; Y5
-            lda #SPRITE_OFFSET+3
+            sta $D001
+            sta $D003
+            sta $D005
+            sta $D007
+            sta $D009
+            sta $D00B
+            lda #SPRITE_OFFSET
             sta SPRITE_PTR+0
-            lda #SPRITE_OFFSET+3
+            lda #SPRITE_OFFSET
             sta SPRITE_PTR+1
-            lda #SPRITE_OFFSET+3
+            lda #SPRITE_OFFSET
             sta SPRITE_PTR+2
-            lda #SPRITE_OFFSET+3
+            lda #SPRITE_OFFSET
             sta SPRITE_PTR+3
-            lda #SPRITE_OFFSET+3
+            lda #SPRITE_OFFSET
             sta SPRITE_PTR+4
-            lda #SPRITE_OFFSET+3
+            lda #SPRITE_OFFSET
             sta SPRITE_PTR+5
-
-;            dec $D020               ; DEDEBUG
 
             ldy #TREETOPY+40
             lda #<IRQ_Two
@@ -249,16 +324,8 @@ END_IRQ:
             lda #0          ; SELF-MODIFIED
             IRQ_Y = *+1
             ldy #0          ; SELF-MODIFIED
-;            IRQ_X = *+1
-;            ldx #0          ; SELF-MODIFIED
 NMI:        rti             ; NMI ignored
 
-
-;----------------------------------------------------------------------------
-; CHARSET
-;----------------------------------------------------------------------------
-
-            !src "chars.inc"
 
 ;----------------------------------------------------------------------------
 ; SPRITES
@@ -277,3 +344,12 @@ sprites:
 
 ; SO, for PAL, use values: (-24) 1E1-1F7 (-1) followed by 0-319
 ; and for NTSC, use:       (-24) 1E9-1FF (-1) followed by 0-319
+
+
+;----------------------------------------------------------------------------
+; CHARSET
+;----------------------------------------------------------------------------
+            * = $2000
+
+            !src "chars.inc"
+            !byte 0,0,0,0,0,0,0,0
