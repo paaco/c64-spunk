@@ -1,9 +1,13 @@
 ;
 ; trees
 ;
+; 1424 bytes exomized
 
 ; variables
+!addr {
 ZP_TREEX = $10          ; 6 tree x-offsets in ZP for speed
+ZP_IRQNUMBER = $16
+
 SPRITE_PTR = $07F8
 
 VIC_SPR_ENA = $D015
@@ -14,7 +18,9 @@ VIC_SPR_DWIDTH = $D01D
 VIC_SPR_MC1 = $D025
 VIC_SPR_MC2 = $D026
 VIC_SPR_COL = $D027
+}
 
+; constants
 RASTERTOP=40            ; top raster irq
 TREETOPY=50             ; first y-position of trees
 
@@ -24,11 +30,10 @@ TREETOPY=50             ; first y-position of trees
 ;2062
 ;            $02A6/678:   Flag: TV Standard: $00 = NTSC, $01 = PAL
 ;            lda $02A6 ; needed for X-offset correction
-;            sta $0428
 
             lda #0
             sta $D020
-            lda #8
+            lda #2
             sta $D021
             lda #0    ; distant background color
             sta $D022 ; Text MC1
@@ -172,52 +177,70 @@ TreeXH:     !byte >10,>100,>150,>200,>250,>300       ; only 1-bit used (bit-9)
 SprXMSB:    !byte $20                                ; precalculated from TreeXH
 ; TODO: you need two versions of SprXMSB, one for the double width treetops and one for the trees
 
+; Raster IRQs (note the first is hard coded in the init and is the last in this list)
+Raster_Line:
+            !byte TREETOPY + 42*0 + 40
+            !byte TREETOPY + 42*1 + 39
+            !byte TREETOPY + 42*2 + 40
+            !byte RASTERTOP
+
+Raster_IRQ:
+            !byte <IRQ_Bump_sprites
+            !byte <IRQ_Start_trees
+            !byte <IRQ_Bump_sprites
+            !byte <IRQ_Top
+
+Raster_Data1:
+            !byte TREETOPY + 42*1
+            !byte TREETOPY + 42*2
+            !byte TREETOPY + 42*3
+            !byte 0
+
 
 ;----------------------------------------------------------------------------
-; IRQs page align so only low-byte needs to change
+; IRQs page aligned so only low-byte needs to change
 ;----------------------------------------------------------------------------
             !align 255,0,0
 
 ; TODO: update SPR_MC1 to black
-; TODO: update scroll position
+; TODO: update X-scroll positions
 ; TODO: update sprites behind characters
-; TODO: reusable IRQ to update sprite pointers and Y-locations (3x)
 ; TODO: reusable IRQ to set single VIC register (3x)
-; TODO: "copper bar" with: rasterline-to-trigger, IRQ-low-byte, value to set
 ; TODO: make sure tree-leaves lowest row is same as top row from tree-stem
 
 ; update sprite pointers only
-IRQ_Two:
-            sta IRQ_A
-            sty IRQ_Y
-
-            lda #TREETOPY+42
+IRQ_Bump_sprites:
+            pha
+            tya
+            pha
+            ldy ZP_IRQNUMBER
+            lda Raster_Data1,y
             sta $D001
             sta $D003
             sta $D005
             sta $D007
             sta $D009
             sta $D00B
--           cmp $D012 ; wait till end of raster line
+-           cmp $D012 ; wait till after sprite fetch
             bne -
+INC_SPRITE_PTRS_END_IRQ:
             inc SPRITE_PTR+0
             inc SPRITE_PTR+1
             inc SPRITE_PTR+2
             inc SPRITE_PTR+3
             inc SPRITE_PTR+4
             inc SPRITE_PTR+5
-
-            ldy #TREETOPY+39+42
-            lda #<IRQ_Two_Copy
             jmp END_IRQ
 
 
-; update sprite pointers, normal width sprites and fix X-offsets
-IRQ_Two_Copy:
-            sta IRQ_A
-            sty IRQ_Y
+; update sprite pointers, un-X-expand sprites and fix corresponding X-offsets
+IRQ_Start_trees:
+            pha
+            tya
+            pha
 
-            lda #TREETOPY+42+42
+            ldy ZP_IRQNUMBER
+            lda Raster_Data1,y
             sta $D001
             sta $D003
             sta $D005
@@ -225,7 +248,7 @@ IRQ_Two_Copy:
             sta $D009
             sta $D00B
 
-            nop ; make sure changing width happens outside the screen
+            nop ; make sure changing width happens outside the screen TODO this is in the middle of the screen
             nop
 
             lda #%00000000
@@ -246,45 +269,13 @@ IRQ_Two_Copy:
             lda #$30
             sta $D010       ; X-MSB
 
-            inc SPRITE_PTR+0
-            inc SPRITE_PTR+1
-            inc SPRITE_PTR+2
-            inc SPRITE_PTR+3
-            inc SPRITE_PTR+4
-            inc SPRITE_PTR+5
-
-            ldy #TREETOPY+42+42+40
-            lda #<IRQ_Three
-            jmp END_IRQ
-
-IRQ_Three:
-            sta IRQ_A
-            sty IRQ_Y
-
-            lda #TREETOPY+42+42+42+20 ; TODO: fix this HACK to go into plants (no 5th sprite yet)
-            sta $D001
-            sta $D003
-            sta $D005
-            sta $D007
-            sta $D009
-            sta $D00B
--           cmp $D012 ; wait till end of raster line
-            bne -
-            inc SPRITE_PTR+0
-            inc SPRITE_PTR+1
-            inc SPRITE_PTR+2
-            inc SPRITE_PTR+3
-            inc SPRITE_PTR+4
-            inc SPRITE_PTR+5
-
-            ldy #RASTERTOP
-            lda #<IRQ_Top
-            jmp END_IRQ
+            jmp INC_SPRITE_PTRS_END_IRQ
 
 ; setup all sprites
 IRQ_Top:
-            sta IRQ_A
-            sty IRQ_Y
+            pha
+            tya
+            pha
 
             ; lda #$D
             ; sta VIC_SPR_MC1
@@ -330,17 +321,20 @@ IRQ_Top:
             lda #SPRITE_OFFSET
             sta SPRITE_PTR+5
 
-            ldy #TREETOPY+40
-            lda #<IRQ_Two
+            lda #$FF
+            sta ZP_IRQNUMBER
 END_IRQ:
-            sty $D012
+            inc ZP_IRQNUMBER
+            ldy ZP_IRQNUMBER
+            lda Raster_Line,y
+            sta $D012
+            lda Raster_IRQ,y
             sta $FFFE
             asl $D019       ; ACK IRQ
 
-            IRQ_A = *+1
-            lda #0          ; SELF-MODIFIED
-            IRQ_Y = *+1
-            ldy #0          ; SELF-MODIFIED
+            pla
+            tya
+            pla
 NMI:        rti             ; NMI ignored
 
 
