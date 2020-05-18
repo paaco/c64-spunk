@@ -33,7 +33,7 @@ TREETOPY=50             ; first y-position of trees
 
             lda #0
             sta $D020
-            lda #2
+            lda #8
             sta $D021
             lda #0    ; distant background color
             sta $D022 ; Text MC1
@@ -106,14 +106,18 @@ TREETOPY=50             ; first y-position of trees
             stx VIC_SPR_COL+4
             ;dex
             stx VIC_SPR_COL+5
+            ldx #4
+            stx VIC_SPR_COL+7 ; SPUNK
 
             ; enable sprites
-            lda #%00111111
+            lda #%10111111
             sta VIC_SPR_ENA
+            lda #%00111111
             sta VIC_SPR_DHEIGHT
             sta VIC_SPR_DWIDTH
-            sta VIC_SPR_MC
             sta VIC_SPR_BEHIND ; TODO this is a HACK for now do properly
+            lda #%10111111
+            sta VIC_SPR_MC
 
             ; init trees
             ldx #0
@@ -204,7 +208,7 @@ Raster_Data1:
 
 ; TODO: update SPR_MC1 to black
 ; TODO: update X-scroll positions
-; TODO: update sprites behind characters
+; TODO: update sprites before/behind characters
 ; TODO: reusable IRQ to set single VIC register (3x)
 ; TODO: make sure tree-leaves lowest row is same as top row from tree-stem
 
@@ -238,7 +242,6 @@ IRQ_Start_trees:
             pha
             tya
             pha
-
             ldy ZP_IRQNUMBER
             lda Raster_Data1,y
             sta $D001
@@ -269,6 +272,9 @@ IRQ_Start_trees:
             lda #$30
             sta $D010       ; X-MSB
 
+            lda #1
+            sta VIC_SPR_MC1
+
             jmp INC_SPRITE_PTRS_END_IRQ
 
 ; setup all sprites
@@ -296,8 +302,11 @@ IRQ_Top:
             sta $D00A       ; X5
             lda ZP_TREEX+0
             sta $D00C       ; X6
-            lda ZP_TREEX+0
+            ; Purple Spunk
+            lda #60
             sta $D00E       ; X7
+            lda #170
+            sta $D00F       ; Y7
             lda SprXMSB
             sta $D010       ; X-MSB
 
@@ -320,6 +329,8 @@ IRQ_Top:
             sta SPRITE_PTR+4
             lda #SPRITE_OFFSET
             sta SPRITE_PTR+5
+            lda #SPRITE_OFFSET+5
+            sta SPRITE_PTR+7
 
             lda #$FF
             sta ZP_IRQNUMBER
