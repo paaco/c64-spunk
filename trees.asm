@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 1424 bytes exomized
+; 1530 bytes exomized
 
 ; variables
 !addr {
@@ -24,6 +24,18 @@ VIC_SPR_COL = $D027
 RASTERTOP=40            ; top raster irq
 TREETOPY=50             ; first y-position of trees
 
+BLACK=0
+GREEN=5
+BLUE=6
+BROWN=8
+ORANGE=9
+
+COLOR_SKY = BLUE
+COLOR_DISTANT = BLACK
+COLOR_BACKGROUND = ORANGE
+COLOR_PLANTS = GREEN
+COLOR_PLANTS_OUTLINE = BLACK
+
 *=$0801
 !byte $0c,$08,$b5,$07,$9e,$20,$32,$30,$36,$32,$00,$00,$00   ; sys 2062
 
@@ -31,13 +43,11 @@ TREETOPY=50             ; first y-position of trees
 ;            $02A6/678:   Flag: TV Standard: $00 = NTSC, $01 = PAL
 ;            lda $02A6 ; needed for X-offset correction
 
-            lda #0
+            lda #0    ; NOTE D020 could already be set by decruncher
             sta $D020
-            lda #8
-            sta $D021
-            lda #0    ; distant background color
+            lda #COLOR_DISTANT
             sta $D022 ; Text MC1
-            lda #5
+            lda #COLOR_PLANTS
             sta $D023 ; Text MC2
 
             ldx #0
@@ -46,7 +56,7 @@ TREETOPY=50             ; first y-position of trees
             sta $0500,x
             sta $0600,x
             sta $0700,x
-            lda #0+8
+            lda #8+COLOR_PLANTS_OUTLINE
             sta $D800,x
             sta $D900,x
             sta $DA00,x
@@ -56,7 +66,7 @@ TREETOPY=50             ; first y-position of trees
 
             lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
             sta $D018
-            lda #%00011000 ; Text MC + 38/40 columns + X-scroll
+            lda #%00010000 ; Text MC + 38 columns + X-scroll
             sta $D016
 
             ; fill plants row
@@ -82,17 +92,17 @@ TREETOPY=50             ; first y-position of trees
             ; distant background
             ldx #0
 -           lda distant,x
-            sta $0400+120,x
+            sta $0400+40,x
             lda distant+$100,x
-            sta $0500+120,x
+            sta $0500+40,x
             lda distant+560-256,x
-            sta $0400+560-256+120,x
+            sta $0400+560-256+40,x
             inx
             bne -
 
             lda #0
             sta VIC_SPR_MC1
-            lda #9
+            lda #8
             sta VIC_SPR_MC2
             ldx #5
             stx VIC_SPR_COL+0
@@ -110,7 +120,7 @@ TREETOPY=50             ; first y-position of trees
             stx VIC_SPR_COL+7 ; SPUNK
 
             ; enable sprites
-            lda #%10111111
+            lda #%11111111
             sta VIC_SPR_ENA
             lda #%00111111
             sta VIC_SPR_DHEIGHT
@@ -146,19 +156,18 @@ TREETOPY=50             ; first y-position of trees
             lda #>NMI
             sta $FFFB
 
-            lda #$01        ; Enable RASTER IRQs only
+            lda #$01        ; Enable raster IRQs only
             sta $D01A
 
             lda #$FF        ; ACK IRQs
             sta $D019
 
-            lda #RASTERTOP  ; rasterline to trigger
+            lda InitRaster  ; raster line to trigger
             sta $D012
-            lda $D011
-            and #$7F        ; set bit 9 of rasterline to 0
+            lda #%00011011  ; set bit 9 of raster line to 0
             sta $D011
 
-            lda #<IRQ_Top
+            lda InitIRQ     ; IRQ only low byte changes in raster IRQ
             sta $FFFE
             lda #>IRQ_Top
             sta $FFFF
@@ -166,7 +175,7 @@ TREETOPY=50             ; first y-position of trees
             cli
 
             ; run everything from IRQ
-loop:       inc $0400
+loop:       inc $0404
             jmp loop
 
 
@@ -181,23 +190,53 @@ TreeXH:     !byte >10,>100,>150,>200,>250,>300       ; only 1-bit used (bit-9)
 SprXMSB:    !byte $20                                ; precalculated from TreeXH
 ; TODO: you need two versions of SprXMSB, one for the double width treetops and one for the trees
 
-; Raster IRQs (note the first is hard coded in the init and is the last in this list)
+; Raster IRQs (starts at InitRaster/InitIRQ and is the last in this list)
 Raster_Line:
             !byte TREETOPY + 42*0 + 40
+            !byte 50 + 8*6
             !byte TREETOPY + 42*1 + 39
+            !byte 50 + 8*15
             !byte TREETOPY + 42*2 + 40
-            !byte RASTERTOP
+            !byte 50 + 8*17
+            !byte 50 + 8*19
+            !byte TREETOPY + 42*3 + 40 ; 216
+            !byte 50 + 8*21+4 ; 218 arg
+InitRaster: !byte RASTERTOP
 
 Raster_IRQ:
             !byte <IRQ_Bump_sprites
+            !byte <IRQ_Set_reg
             !byte <IRQ_Start_trees
+            !byte <IRQ_Set_reg
             !byte <IRQ_Bump_sprites
-            !byte <IRQ_Top
+            !byte <IRQ_Set_reg
+            !byte <IRQ_Set_reg
+            !byte <IRQ_Bump_sprites
+            !byte <IRQ_Set_reg
+InitIRQ:    !byte <IRQ_Top
 
 Raster_Data1:
             !byte TREETOPY + 42*1
+            !byte COLOR_BACKGROUND
             !byte TREETOPY + 42*2
+            !byte 1
             !byte TREETOPY + 42*3
+            !byte 2
+            !byte 3
+            !byte TREETOPY + 42*4
+            !byte 4
+            !byte 0
+
+Raster_Data2:
+            !byte 0
+            !byte $21
+            !byte 0
+            !byte $21
+            !byte 0
+            !byte $21
+            !byte $21
+            !byte 0
+            !byte $21
             !byte 0
 
 
@@ -205,11 +244,11 @@ Raster_Data1:
 ; IRQs page aligned so only low-byte needs to change
 ;----------------------------------------------------------------------------
             !align 255,0,0
+IRQ_PAGE:
 
 ; TODO: update SPR_MC1 to black
 ; TODO: update X-scroll positions
 ; TODO: update sprites before/behind characters
-; TODO: reusable IRQ to set single VIC register (3x)
 ; TODO: make sure tree-leaves lowest row is same as top row from tree-stem
 
 ; update sprite pointers only
@@ -234,6 +273,9 @@ INC_SPRITE_PTRS_END_IRQ:
             inc SPRITE_PTR+3
             inc SPRITE_PTR+4
             inc SPRITE_PTR+5
+
+            inc $D020
+
             jmp END_IRQ
 
 
@@ -272,10 +314,17 @@ IRQ_Start_trees:
             lda #$30
             sta $D010       ; X-MSB
 
-            lda #1
+            lda #0
             sta VIC_SPR_MC1
 
             jmp INC_SPRITE_PTRS_END_IRQ
+
+
+; set a single VIC register
+IRQ_Set_reg:
+            ; outside of IRQ page since we have to wait anyway
+            jmp Remaining_IRQ_Set_reg
+
 
 ; setup all sprites
 IRQ_Top:
@@ -332,6 +381,10 @@ IRQ_Top:
             lda #SPRITE_OFFSET+5
             sta SPRITE_PTR+7
 
+            lda #COLOR_SKY
+            sta $D020 ; DEBUG
+            sta $D021
+
             lda #$FF
             sta ZP_IRQNUMBER
 END_IRQ:
@@ -348,6 +401,32 @@ END_IRQ:
             pla
 NMI:        rti             ; NMI ignored
 
+; set a single VIC register
+Remaining_IRQ_Set_reg:
+            pha
+            tya
+            pha
+            txa
+            pha
+            ldx ZP_IRQNUMBER
+            ldy Raster_Data2,x  ; offset
+            lda Raster_Data1,x  ; data
+            ; move outside view
+            nop
+            nop
+            nop
+            nop
+            nop
+            nop
+            sta $D000,y
+            pla
+            tax
+            jmp END_IRQ
+
+
+!if >IRQ_PAGE != >IRQ_Top {
+    !error "IRQ page too long"
+}
 
 ;----------------------------------------------------------------------------
 ; DATA distant background
