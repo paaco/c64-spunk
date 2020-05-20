@@ -64,6 +64,23 @@ COLOR_PLANTS_OUTLINE = BLACK
             inx
             bne -
 
+            ; test
+            lda #16
+            sta $0410+15*40
+            sta $D810+15*40
+            sta $0410+16*40
+            sta $D810+16*40
+            sta $0410+17*40
+            sta $D810+17*40
+            sta $0410+18*40
+            sta $D810+18*40
+            sta $0410+19*40
+            sta $D810+19*40
+            sta $0410+20*40
+            sta $D810+20*40
+            sta $0410+21*40
+            sta $D810+21*40
+
             lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
             sta $D018
             lda #%00010000 ; Text MC + 38 columns + X-scroll
@@ -126,7 +143,7 @@ COLOR_PLANTS_OUTLINE = BLACK
             sta VIC_SPR_DHEIGHT
             sta VIC_SPR_DWIDTH
             sta VIC_SPR_BEHIND ; TODO this is a HACK for now do properly
-            lda #%10111111
+            lda #%11111111
             sta VIC_SPR_MC
 
             ; init trees
@@ -197,10 +214,10 @@ Raster_Line:
             !byte TREETOPY + 42*1 + 39
             !byte 50 + 8*15
             !byte TREETOPY + 42*2 + 40
-            !byte 50 + 8*17
-            !byte 50 + 8*19
+            !byte 50 + 8*17-1 ; TODO bad line trouble here
+            !byte 50 + 8*19-1 ; TODO bad line trouble here
             !byte TREETOPY + 42*3 + 40 ; 216
-            !byte 50 + 8*21+4 ; 218 arg
+            !byte 50 + 8*22
 InitRaster: !byte RASTERTOP
 
 Raster_IRQ:
@@ -273,9 +290,7 @@ INC_SPRITE_PTRS_END_IRQ:
             inc SPRITE_PTR+3
             inc SPRITE_PTR+4
             inc SPRITE_PTR+5
-
-            inc $D020
-
+            ;inc $D020 ; DEBUG
             jmp END_IRQ
 
 
@@ -349,8 +364,11 @@ IRQ_Top:
             sta $D008       ; X4
             lda ZP_TREEX+5
             sta $D00A       ; X5
-            lda ZP_TREEX+0
+            ; enemy
+            lda #60
             sta $D00C       ; X6
+            lda #210
+            sta $D00D       ; Y6
             ; Purple Spunk
             lda #60
             sta $D00E       ; X7
@@ -379,10 +397,12 @@ IRQ_Top:
             lda #SPRITE_OFFSET
             sta SPRITE_PTR+5
             lda #SPRITE_OFFSET+5
+            sta SPRITE_PTR+6
+            lda #SPRITE_OFFSET+5
             sta SPRITE_PTR+7
 
             lda #COLOR_SKY
-            sta $D020 ; DEBUG
+            ;sta $D020 ; DEBUG
             sta $D021
 
             lda #$FF
