@@ -29,8 +29,9 @@ GREEN=5
 BLUE=6
 BROWN=8
 ORANGE=9
+LIGHT_BLUE=14
 
-COLOR_SKY = BLUE
+COLOR_SKY = LIGHT_BLUE
 COLOR_DISTANT = BLACK
 COLOR_BACKGROUND = ORANGE
 COLOR_PLANTS = GREEN
@@ -66,20 +67,34 @@ COLOR_PLANTS_OUTLINE = BLACK
 
             ; test
             lda #16
-            sta $0410+15*40
-            sta $D810+15*40
-            sta $0410+16*40
-            sta $D810+16*40
-            sta $0410+17*40
-            sta $D810+17*40
-            sta $0410+18*40
-            sta $D810+18*40
-            sta $0410+19*40
-            sta $D810+19*40
-            sta $0410+20*40
-            sta $D810+20*40
-            sta $0410+21*40
-            sta $D810+21*40
+            sta $0400+15*40+2
+            sta $D800+15*40+2
+            sta $0400+16*40+2
+            sta $D800+16*40+2
+            sta $0400+17*40+2
+            sta $D800+17*40+2
+            sta $0400+18*40+2
+            sta $D800+18*40+2
+            sta $0400+19*40+2
+            sta $D800+19*40+2
+            sta $0400+20*40+2
+            sta $D800+20*40+2
+            sta $0400+21*40+2
+            sta $D800+21*40+2
+            sta $0400+15*40+34
+            sta $D800+15*40+34
+            sta $0400+16*40+34
+            sta $D800+16*40+34
+            sta $0400+17*40+34
+            sta $D800+17*40+34
+            sta $0400+18*40+34
+            sta $D800+18*40+34
+            sta $0400+19*40+34
+            sta $D800+19*40+34
+            sta $0400+20*40+34
+            sta $D800+20*40+34
+            sta $0400+21*40+34
+            sta $D800+21*40+34
 
             lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
             sta $D018
@@ -181,7 +196,7 @@ COLOR_PLANTS_OUTLINE = BLACK
 
             lda InitRaster  ; raster line to trigger
             sta $D012
-            lda #%00011011  ; set bit 9 of raster line to 0
+            lda #%00011000+3  ; set bit 9 of raster line to 0 + Y-scroll
             sta $D011
 
             lda InitIRQ     ; IRQ only low byte changes in raster IRQ
@@ -202,8 +217,8 @@ loop:       inc $0404
 
 ; TODO: x-offsets should be 2 bytes: highest 8 bits in one (looks like x-value/2)
 ; TODO: and lowest bit + 7 bits behind comma in another
-TreeXL:     !byte <10,<100,<150,<200,<250,<300       ; 8-bit fixed point
-TreeXH:     !byte >10,>100,>150,>200,>250,>300       ; only 1-bit used (bit-9)
+TreeXL:     !byte <50,<100,<150,<200,<250,<300       ; 8-bit fixed point
+TreeXH:     !byte >50,>100,>150,>200,>250,>300       ; only 1-bit used (bit-9)
 SprXMSB:    !byte $20                                ; precalculated from TreeXH
 ; TODO: you need two versions of SprXMSB, one for the double width treetops and one for the trees
 
@@ -213,9 +228,9 @@ Raster_Line:
             !byte 50 + 8*6
             !byte TREETOPY + 42*1 + 39
             !byte 50 + 8*15
-            !byte TREETOPY + 42*2 + 40
-            !byte 50 + 8*17-1 ; TODO bad line trouble here
-            !byte 50 + 8*19-1 ; TODO bad line trouble here
+            !byte TREETOPY + 42*2 + 40 ; 174
+            !byte 50 + 8*17
+            !byte 50 + 8*19
             !byte TREETOPY + 42*3 + 40 ; 216
             !byte 50 + 8*22
 InitRaster: !byte RASTERTOP
@@ -224,24 +239,24 @@ Raster_IRQ:
             !byte <IRQ_Bump_sprites
             !byte <IRQ_Set_reg
             !byte <IRQ_Start_trees
-            !byte <IRQ_Set_reg
+            !byte <IRQ_Set_x_scroll
             !byte <IRQ_Bump_sprites
-            !byte <IRQ_Set_reg
-            !byte <IRQ_Set_reg
+            !byte <IRQ_Set_x_scroll
+            !byte <IRQ_Set_x_scroll
             !byte <IRQ_Bump_sprites
-            !byte <IRQ_Set_reg
+            !byte <IRQ_Set_x_scroll
 InitIRQ:    !byte <IRQ_Top
 
 Raster_Data1:
             !byte TREETOPY + 42*1
             !byte COLOR_BACKGROUND
             !byte TREETOPY + 42*2
-            !byte 1
+            !byte %00010000+1
             !byte TREETOPY + 42*3
-            !byte 2
-            !byte 3
+            !byte %00010000+2
+            !byte %00010000+3
             !byte TREETOPY + 42*4
-            !byte 4
+            !byte %00010000+7
             !byte 0
 
 Raster_Data2:
@@ -264,7 +279,6 @@ Raster_Data2:
 IRQ_PAGE:
 
 ; TODO: update SPR_MC1 to black
-; TODO: update X-scroll positions
 ; TODO: update sprites before/behind characters
 ; TODO: make sure tree-leaves lowest row is same as top row from tree-stem
 
@@ -314,7 +328,7 @@ IRQ_Start_trees:
             lda #%00000000
             sta VIC_SPR_DWIDTH
 
-            lda #<(10+12)
+            lda #<(50+12)
             sta $D000       ; X0
             lda #<(100+12)
             sta $D002       ; X1
@@ -339,6 +353,17 @@ IRQ_Start_trees:
 IRQ_Set_reg:
             ; outside of IRQ page since we have to wait anyway
             jmp Remaining_IRQ_Set_reg
+
+
+; set X-scroll
+IRQ_Set_x_scroll:
+            pha
+            tya
+            pha
+            ldy ZP_IRQNUMBER
+            lda Raster_Data1,y  ; data
+            sta $D016
+            jmp END_IRQ
 
 
 ; setup all sprites
@@ -417,7 +442,7 @@ END_IRQ:
             asl $D019       ; ACK IRQ
 
             pla
-            tya
+            tay
             pla
 NMI:        rti             ; NMI ignored
 
