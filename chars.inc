@@ -1,14 +1,5 @@
 ; room for basic charset 64 chars
-!fill 16*8,0
-!byte %########
-!byte %#......#
-!byte %#.####.#
-!byte %#.#..#.#
-!byte %#.#..#.#
-!byte %#.####.#
-!byte %#......#
-!byte %######..
-!fill (64-17)*8,0
+!fill 64*8,0
 ; Sprite2asm trees-distant-ch40-mc0f.png 23 mei 2020 15:56:56
 ; charset 32 uniques
 !byte $00,$00,$00,$00,$00,$00,$00,$00

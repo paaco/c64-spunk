@@ -1,15 +1,16 @@
 ;
 ; trees
 ;
-; 1530 bytes exomized
+; 1568 bytes exomized
 
 ; variables
 !addr {
 ZP_TREEX = $10          ; 6 tree x-offsets in ZP for speed
-ZP_IRQNUMBER = $16
+ZP_IRQNUMBER = $16      ; current raster IRQ
 
 SPRITE_PTR = $07F8
 
+VIC_SPR_X_MSB = $D010
 VIC_SPR_ENA = $D015
 VIC_SPR_DHEIGHT = $D017
 VIC_SPR_BEHIND = $D01B
@@ -25,26 +26,41 @@ RASTERTOP=40            ; top raster irq
 TREETOPY=50             ; first y-position of trees
 
 BLACK=0
+CYAN=3
 GREEN=5
 BLUE=6
-BROWN=8
-ORANGE=9
+ORANGE=8
+BROWN=9
 LIGHT_BLUE=14
 
+COLOR_BORDER = CYAN
 COLOR_SKY = LIGHT_BLUE
 COLOR_DISTANT = BLACK
-COLOR_BACKGROUND = ORANGE
+COLOR_BACKGROUND = BROWN
 COLOR_PLANTS = GREEN
 COLOR_PLANTS_OUTLINE = BLACK
 
 *=$0801
-!byte $0c,$08,$b5,$07,$9e,$20,$32,$30,$36,$32,$00,$00,$00   ; sys 2062
+!byte $0c,$08,$b5,$07,$9e,$20,$32,$30,$36,$32,$00,$00,$00   ; SYS 2062
 
 ;2062
-;            $02A6/678:   Flag: TV Standard: $00 = NTSC, $01 = PAL
-;            lda $02A6 ; needed for X-offset correction
 
-            lda #0    ; NOTE D020 could already be set by decruncher
+; TODO should we use this PAL/NTSC check? (doesn't use 02A6)
+;l1 lda $d012
+;l2 cmp $d012
+;   beq l2
+;   bmi l1
+;   cmp #$20
+;   bcc ntsc
+
+;            $02A6/678:   Flag: TV Standard: $00 = NTSC, $01 = PAL
+            lda $02A6
+            bne OK_its_PAL
+            ; NTSC fix X-offset correction
+            lda #0
+            sta NTSC_fix1+1
+OK_its_PAL:
+            lda #COLOR_BORDER   ; NOTE D020 could already be set by decruncher
             sta $D020
             lda #COLOR_DISTANT
             sta $D022 ; Text MC1
@@ -65,41 +81,8 @@ COLOR_PLANTS_OUTLINE = BLACK
             inx
             bne -
 
-            ; test
-            lda #16
-            sta $0400+15*40+2
-            sta $D800+15*40+2
-            sta $0400+16*40+2
-            sta $D800+16*40+2
-            sta $0400+17*40+2
-            sta $D800+17*40+2
-            sta $0400+18*40+2
-            sta $D800+18*40+2
-            sta $0400+19*40+2
-            sta $D800+19*40+2
-            sta $0400+20*40+2
-            sta $D800+20*40+2
-            sta $0400+21*40+2
-            sta $D800+21*40+2
-            sta $0400+15*40+34
-            sta $D800+15*40+34
-            sta $0400+16*40+34
-            sta $D800+16*40+34
-            sta $0400+17*40+34
-            sta $D800+17*40+34
-            sta $0400+18*40+34
-            sta $D800+18*40+34
-            sta $0400+19*40+34
-            sta $D800+19*40+34
-            sta $0400+20*40+34
-            sta $D800+20*40+34
-            sta $0400+21*40+34
-            sta $D800+21*40+34
-
             lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
             sta $D018
-            lda #%00010000 ; Text MC + 38 columns + X-scroll
-            sta $D016
 
             ; fill plants row
             clc
@@ -132,9 +115,9 @@ COLOR_PLANTS_OUTLINE = BLACK
             inx
             bne -
 
-            lda #0
+            lda #BLACK
             sta VIC_SPR_MC1
-            lda #8
+            lda #ORANGE
             sta VIC_SPR_MC2
             ldx #5
             stx VIC_SPR_COL+0
@@ -211,6 +194,34 @@ loop:       inc $0404
             jmp loop
 
 
+; Convert sprite X-offsets from 9.7 value (range 0 .. 344)
+; high     low
+; 87654321 0ddddddd
+; ^ends up in MSB
+; 1) subtract 24 (range -24 .. 320)
+; 2) for PAL subtract 8 for values < 0: so the range is 1E0 .. 1F7 000 .. 13F
+;    for NTSC don't subtract 8, so the NTSC range is    1E8 .. 1FF 000 .. 13F
+; see https://bumbershootsoft.wordpress.com/2019/07/01/c64-fat-sprite-workarounds/
+calc_X:
+            lda ValueH
+            sec
+            sbc #12     ; -24 shifted once
+            ldx ValueL  ; copy bit 7 into carry
+            cpx #$80    ; so bit 0 from x-coordinate ends in carry
+            rol         ; 7..0 carry contains MSB bit 8
+            rol $FF     ; store MSB
+            ; subtract 8 if A < 0 (only for PAL, don't do this on NTSC, i.e. subtract 0)
+            cmp #$00
+            bpl +
+            ;sec carry always set
+NTSC_fix1:  sbc #8
++           sta ValueH ; actual sprite X-value
+            rts
+
+ValueH:     !byte 0 >> 1
+ValueL:     !byte (0 % 2) * $80
+
+
 ;----------------------------------------------------------------------------
 ; DATA
 ;----------------------------------------------------------------------------
@@ -251,24 +262,24 @@ Raster_Data1:
             !byte TREETOPY + 42*1
             !byte COLOR_BACKGROUND
             !byte TREETOPY + 42*2
-            !byte %00010000+1
-            !byte TREETOPY + 42*3
-            !byte %00010000+2
-            !byte %00010000+3
-            !byte TREETOPY + 42*4
             !byte %00010000+7
+            !byte TREETOPY + 42*3
+            !byte %00010000+6
+            !byte %00010000+5
+            !byte TREETOPY + 42*4
+            !byte %00010000+4
             !byte 0
 
 Raster_Data2:
             !byte 0
             !byte $21
             !byte 0
-            !byte $21
             !byte 0
-            !byte $21
-            !byte $21
             !byte 0
-            !byte $21
+            !byte 0
+            !byte 0
+            !byte 0
+            !byte 0
             !byte 0
 
 
@@ -304,7 +315,6 @@ INC_SPRITE_PTRS_END_IRQ:
             inc SPRITE_PTR+3
             inc SPRITE_PTR+4
             inc SPRITE_PTR+5
-            ;inc $D020 ; DEBUG
             jmp END_IRQ
 
 
@@ -322,9 +332,6 @@ IRQ_Start_trees:
             sta $D009
             sta $D00B
 
-            nop ; make sure changing width happens outside the screen TODO this is in the middle of the screen
-            nop
-
             lda #%00000000
             sta VIC_SPR_DWIDTH
 
@@ -341,11 +348,9 @@ IRQ_Start_trees:
             lda #<(300+12)
             sta $D00A       ; X5
             lda #$30
-            sta $D010       ; X-MSB
-
-            lda #0
+            sta VIC_SPR_X_MSB
+            lda #BLACK
             sta VIC_SPR_MC1
-
             jmp INC_SPRITE_PTRS_END_IRQ
 
 
@@ -374,6 +379,8 @@ IRQ_Top:
 
             ; lda #$D
             ; sta VIC_SPR_MC1
+            lda #%00011000 ; Text MC + 40 columns + X-scroll
+            sta $D016
             lda #%00111111
             sta VIC_SPR_DWIDTH
 
@@ -390,17 +397,17 @@ IRQ_Top:
             lda ZP_TREEX+5
             sta $D00A       ; X5
             ; enemy
-            lda #60
+            lda #30
             sta $D00C       ; X6
             lda #210
             sta $D00D       ; Y6
             ; Purple Spunk
-            lda #60
+            lda #30
             sta $D00E       ; X7
             lda #170
             sta $D00F       ; Y7
             lda SprXMSB
-            sta $D010       ; X-MSB
+            sta VIC_SPR_X_MSB
 
             lda #TREETOPY
             sta $D001
@@ -427,7 +434,6 @@ IRQ_Top:
             sta SPRITE_PTR+7
 
             lda #COLOR_SKY
-            ;sta $D020 ; DEBUG
             sta $D021
 
             lda #$FF
@@ -504,15 +510,6 @@ distant:
 SPRITE_OFFSET = (sprites and $3FFF) >> 6
 sprites:
             !src "sprites.inc"
-
-; https://bumbershootsoft.wordpress.com/2019/07/01/c64-fat-sprite-workarounds/
-; If you want to scroll a “fat” (X- or horizontally-expanded) sprite off the left edge of the screen on the C64,
-; the first 24 columns are covered with X locations 0-23, but for the last 24 you have to know if you’re an NTSC or PAL system.
-; If you are on an NTSC system, old or new, the values from 489 to 511 (high bit set, low byte 233-255) cover columns 25-48,
-; and on PAL you subtract eight, for 481-503 (low byte 225-247).
-
-; SO, for PAL, use values: (-24) 1E1-1F7 (-1) followed by 0-319
-; and for NTSC, use:       (-24) 1E9-1FF (-1) followed by 0-319
 
 
 ;----------------------------------------------------------------------------
