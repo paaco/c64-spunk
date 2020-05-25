@@ -5,8 +5,7 @@
 
 ; variables
 !addr {
-ZP_TREEX = $10          ; 6 tree x-offsets in ZP for speed
-ZP_IRQNUMBER = $16      ; current raster IRQ
+ZP_IRQNUMBER = $10      ; current raster IRQ
 
 SPRITE_PTR = $07F8
 
@@ -16,6 +15,8 @@ VIC_SPR_DHEIGHT = $D017
 VIC_SPR_BEHIND = $D01B
 VIC_SPR_MC = $D01C
 VIC_SPR_DWIDTH = $D01D
+VIC_COL_TXT_MC1 = $D022
+VIC_COL_TXT_MC2 = $D023
 VIC_SPR_MC1 = $D025
 VIC_SPR_MC2 = $D026
 VIC_SPR_COL = $D027
@@ -26,14 +27,16 @@ RASTERTOP=40            ; top raster irq
 TREETOPY=50             ; first y-position of trees
 
 BLACK=0
+WHITE=1
 CYAN=3
+PURPLE=4
 GREEN=5
 BLUE=6
 ORANGE=8
 BROWN=9
 LIGHT_BLUE=14
 
-COLOR_BORDER = CYAN
+COLOR_BORDER = BLACK
 COLOR_SKY = LIGHT_BLUE
 COLOR_DISTANT = BLACK
 COLOR_BACKGROUND = BROWN
@@ -44,29 +47,25 @@ COLOR_PLANTS_OUTLINE = BLACK
 !byte $0c,$08,$b5,$07,$9e,$20,$32,$30,$36,$32,$00,$00,$00   ; SYS 2062
 
 ;2062
-
-; TODO should we use this PAL/NTSC check? (doesn't use 02A6)
-;l1 lda $d012
-;l2 cmp $d012
-;   beq l2
-;   bmi l1
-;   cmp #$20
-;   bcc ntsc
-
-;            $02A6/678:   Flag: TV Standard: $00 = NTSC, $01 = PAL
-            lda $02A6
+            lda $02A6 ; $02A6/678:   Flag: TV Standard: $00 = NTSC, $01 = PAL
             bne OK_its_PAL
+
             ; NTSC fix X-offset correction
             lda #0
             sta NTSC_fix1+1
+
 OK_its_PAL:
+            ; global colors and VIC settings
             lda #COLOR_BORDER   ; NOTE D020 could already be set by decruncher
             sta $D020
             lda #COLOR_DISTANT
-            sta $D022 ; Text MC1
+            sta VIC_COL_TXT_MC1
             lda #COLOR_PLANTS
-            sta $D023 ; Text MC2
+            sta VIC_COL_TXT_MC2
+            lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
+            sta $D018
 
+            ; cls
             ldx #0
 -           lda #0
             sta $0400,x
@@ -81,29 +80,6 @@ OK_its_PAL:
             inx
             bne -
 
-            lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
-            sta $D018
-
-            ; fill plants row
-            clc
-            ldx #0
--           txa
-            adc #64+32
-            sta $0400+22*40,x
-            sta $0400+22*40+11,x
-            sta $0400+22*40+22,x
-            adc #11
-            sta $0428+22*40,X
-            sta $0428+22*40+11,X
-            sta $0428+22*40+22,X
-            adc #11
-            sta $0450+22*40,X
-            sta $0450+22*40+11,X
-            sta $0450+22*40+22,X
-            inx
-            cpx #11
-            bne -
-
             ; distant background
             ldx #0
 -           lda distant,x
@@ -113,6 +89,41 @@ OK_its_PAL:
             lda distant+560-256,x
             sta $0400+560-256+40,x
             inx
+            bne -
+
+            ; logo (280 bytes)
+            ldx #0
+-           lda logo,x
+            beq +
+            sta $0400+40*2,x
+            lda #WHITE
+            sta $D800+40*2,x
++           lda logo+140,x
+            beq +
+            sta $0400+40*2+140,x
+            lda #WHITE
+            sta $D800+40*2+140,x
++           inx
+            cpx #140
+            bne -
+
+            ; draw plants row
+            clc
+            ldy #0
+            ldx #0 ; TODO initial offset (0..10)
+-           txa
+            adc #64+32
+            sta $0400+22*40,y
+            adc #11
+            sta $0400+23*40,y
+            adc #11
+            sta $0400+24*40,y
+            inx
+            cpx #11
+            bne +
+            ldx #0
++           iny
+            cpy #40
             bne -
 
             lda #BLACK
@@ -131,7 +142,7 @@ OK_its_PAL:
             stx VIC_SPR_COL+4
             ;dex
             stx VIC_SPR_COL+5
-            ldx #4
+            ldx #PURPLE
             stx VIC_SPR_COL+7 ; SPUNK
 
             ; enable sprites
@@ -144,13 +155,14 @@ OK_its_PAL:
             lda #%11111111
             sta VIC_SPR_MC
 
-            ; init trees
-            ldx #0
--           lda TreeXL,x
-            sta ZP_TREEX,x
-            inx
-            cpx #6
-            bne -
+            ; Test calc X for tree 0
+            jsr calc_X
+            lda $FF ; MSB
+            sta Crown_X_MSB+1
+            sta Tree_X_MSB+1
+            lda ValueH ; X
+            sta Crown_X0+1
+            sta Tree_X0+1
 
             sei
 
@@ -218,69 +230,8 @@ NTSC_fix1:  sbc #8
 +           sta ValueH ; actual sprite X-value
             rts
 
-ValueH:     !byte 0 >> 1
-ValueL:     !byte (0 % 2) * $80
-
-
-;----------------------------------------------------------------------------
-; DATA
-;----------------------------------------------------------------------------
-
-; TODO: x-offsets should be 2 bytes: highest 8 bits in one (looks like x-value/2)
-; TODO: and lowest bit + 7 bits behind comma in another
-TreeXL:     !byte <50,<100,<150,<200,<250,<300       ; 8-bit fixed point
-TreeXH:     !byte >50,>100,>150,>200,>250,>300       ; only 1-bit used (bit-9)
-SprXMSB:    !byte $20                                ; precalculated from TreeXH
-; TODO: you need two versions of SprXMSB, one for the double width treetops and one for the trees
-
-; Raster IRQs (starts at InitRaster/InitIRQ and is the last in this list)
-Raster_Line:
-            !byte TREETOPY + 42*0 + 40
-            !byte 50 + 8*6
-            !byte TREETOPY + 42*1 + 39
-            !byte 50 + 8*15
-            !byte TREETOPY + 42*2 + 40 ; 174
-            !byte 50 + 8*17
-            !byte 50 + 8*19
-            !byte TREETOPY + 42*3 + 40 ; 216
-            !byte 50 + 8*22
-InitRaster: !byte RASTERTOP
-
-Raster_IRQ:
-            !byte <IRQ_Bump_sprites
-            !byte <IRQ_Set_reg
-            !byte <IRQ_Start_trees
-            !byte <IRQ_Set_x_scroll
-            !byte <IRQ_Bump_sprites
-            !byte <IRQ_Set_x_scroll
-            !byte <IRQ_Set_x_scroll
-            !byte <IRQ_Bump_sprites
-            !byte <IRQ_Set_x_scroll
-InitIRQ:    !byte <IRQ_Top
-
-Raster_Data1:
-            !byte TREETOPY + 42*1
-            !byte COLOR_BACKGROUND
-            !byte TREETOPY + 42*2
-            !byte %00010000+7
-            !byte TREETOPY + 42*3
-            !byte %00010000+6
-            !byte %00010000+5
-            !byte TREETOPY + 42*4
-            !byte %00010000+4
-            !byte 0
-
-Raster_Data2:
-            !byte 0
-            !byte $21
-            !byte 0
-            !byte 0
-            !byte 0
-            !byte 0
-            !byte 0
-            !byte 0
-            !byte 0
-            !byte 0
+ValueH:     !byte 61 >> 1
+ValueL:     !byte (61 % 2) * $80
 
 
 ;----------------------------------------------------------------------------
@@ -335,8 +286,8 @@ IRQ_Start_trees:
             lda #%00000000
             sta VIC_SPR_DWIDTH
 
-            lda #<(50+12)
-            sta $D000       ; X0
+Tree_X0:    lda #<(50+12)
+Tree_P0:    sta $D000       ; X0
             lda #<(100+12)
             sta $D002       ; X1
             lda #<(150+12)
@@ -347,7 +298,7 @@ IRQ_Start_trees:
             sta $D008       ; X4
             lda #<(300+12)
             sta $D00A       ; X5
-            lda #$30
+Tree_X_MSB: lda #$30
             sta VIC_SPR_X_MSB
             lda #BLACK
             sta VIC_SPR_MC1
@@ -384,17 +335,17 @@ IRQ_Top:
             lda #%00111111
             sta VIC_SPR_DWIDTH
 
-            lda ZP_TREEX+0
-            sta $D000       ; X0
-            lda ZP_TREEX+1
+Crown_X0:   lda #50
+Crown_P0:   sta $D000       ; X0
+            lda #100
             sta $D002       ; X1
-            lda ZP_TREEX+2
+            lda #150
             sta $D004       ; X2
-            lda ZP_TREEX+3
+            lda #200
             sta $D006       ; X3
-            lda ZP_TREEX+4
+            lda #250
             sta $D008       ; X4
-            lda ZP_TREEX+5
+            lda #<300
             sta $D00A       ; X5
             ; enemy
             lda #30
@@ -406,7 +357,7 @@ IRQ_Top:
             sta $D00E       ; X7
             lda #170
             sta $D00F       ; Y7
-            lda SprXMSB
+Crown_X_MSB:lda #$30
             sta VIC_SPR_X_MSB
 
             lda #TREETOPY
@@ -479,12 +430,75 @@ Remaining_IRQ_Set_reg:
     !error "IRQ page too long"
 }
 
+
+;----------------------------------------------------------------------------
+; DATA raster splits
+;----------------------------------------------------------------------------
+
+; Raster IRQs (starts at InitRaster/InitIRQ and is the last in this list)
+Raster_Line:
+            !byte TREETOPY + 42*0 + 40
+            !byte 50 + 8*6
+            !byte TREETOPY + 42*1 + 39
+            !byte 50 + 8*15
+            !byte TREETOPY + 42*2 + 40 ; 174
+            !byte 50 + 8*17
+            !byte 50 + 8*19
+            !byte TREETOPY + 42*3 + 40 ; 216
+            !byte 50 + 8*22
+InitRaster: !byte RASTERTOP
+
+Raster_IRQ:
+            !byte <IRQ_Bump_sprites
+            !byte <IRQ_Set_reg
+            !byte <IRQ_Start_trees
+            !byte <IRQ_Set_x_scroll
+            !byte <IRQ_Bump_sprites
+            !byte <IRQ_Set_x_scroll
+            !byte <IRQ_Set_x_scroll
+            !byte <IRQ_Bump_sprites
+            !byte <IRQ_Set_x_scroll
+InitIRQ:    !byte <IRQ_Top
+
+Raster_Data1:
+            !byte TREETOPY + 42*1
+            !byte COLOR_BACKGROUND
+            !byte TREETOPY + 42*2
+            !byte %00010000+7
+            !byte TREETOPY + 42*3
+            !byte %00010000+6
+            !byte %00010000+5
+            !byte TREETOPY + 42*4
+            !byte %00010000+4
+            !byte 0
+
+Raster_Data2:
+            !byte 0
+            !byte $21
+            !byte 0
+            !byte 0
+            !byte 0
+            !byte 0
+            !byte 0
+            !byte 0
+            !byte 0
+            !byte 0
+
+
+;----------------------------------------------------------------------------
+; DATA
+;----------------------------------------------------------------------------
+
+; TODO: x-offsets should be 2 bytes: highest 8 bits in one (looks like x-value/2)
+; TODO: and lowest bit + 7 bits behind comma in another
+
+
 ;----------------------------------------------------------------------------
 ; DATA distant background
 ;----------------------------------------------------------------------------
 
 distant:
-; Sprite2asm trees-distant-ch40-mc0f.png 15 mei 2020 16:07:40
+; Sprite2asm trees-distant-ch40-mc0f.png 25 mei 2020 20:52:36
 ; charmap 560 bytes (40 x 14)
 !byte $42,$41,$42,$41,$42,$41,$42,$41,$40,$42,$41,$42,$41,$43,$40,$42,$41,$42,$41,$42,$41,$42,$41,$44,$40,$42,$41,$42,$41,$40,$40,$42,$41,$42,$41,$42,$41,$42,$41,$40
 !byte $45,$41,$46,$41,$45,$41,$46,$41,$45,$45,$41,$46,$41,$47,$48,$45,$41,$46,$41,$45,$41,$46,$41,$43,$48,$45,$41,$46,$41,$45,$41,$45,$41,$46,$41,$45,$41,$46,$41,$43
@@ -494,12 +508,36 @@ distant:
 !byte $46,$45,$46,$42,$46,$45,$46,$42,$45,$46,$45,$46,$42,$43,$48,$46,$45,$46,$42,$46,$45,$46,$42,$4d,$48,$46,$45,$46,$42,$45,$45,$46,$45,$46,$42,$46,$45,$46,$42,$43
 !byte $4e,$45,$45,$4f,$4e,$45,$45,$4f,$46,$4e,$45,$45,$4f,$40,$40,$4e,$45,$45,$4f,$4e,$45,$45,$4f,$50,$40,$4e,$45,$45,$4f,$46,$49,$4e,$45,$45,$4f,$4e,$45,$45,$4f,$40
 !byte $51,$45,$52,$40,$51,$45,$52,$40,$45,$52,$45,$52,$40,$40,$40,$51,$45,$52,$40,$51,$45,$52,$40,$40,$40,$51,$45,$52,$51,$45,$52,$51,$45,$52,$40,$51,$45,$52,$40,$40
-!byte $40,$53,$54,$40,$40,$53,$54,$40,$53,$54,$53,$54,$40,$40,$40,$40,$53,$54,$40,$40,$53,$54,$40,$40,$40,$40,$53,$54,$40,$53,$54,$40,$53,$54,$40,$40,$53,$54,$40,$40
-!byte $40,$53,$55,$40,$40,$56,$54,$40,$56,$54,$56,$54,$40,$40,$40,$40,$56,$54,$40,$40,$53,$55,$40,$40,$40,$40,$56,$54,$40,$56,$54,$40,$56,$54,$40,$40,$56,$54,$40,$40
-!byte $40,$56,$54,$40,$40,$53,$54,$40,$53,$54,$53,$54,$40,$40,$57,$58,$53,$54,$40,$40,$53,$54,$40,$40,$57,$58,$53,$55,$40,$53,$54,$40,$53,$54,$40,$40,$53,$54,$40,$40
-!byte $40,$59,$54,$57,$58,$59,$55,$57,$59,$55,$59,$55,$57,$58,$5a,$5b,$59,$54,$57,$58,$59,$54,$57,$58,$5a,$5b,$59,$54,$40,$59,$55,$40,$59,$55,$57,$58,$59,$55,$40,$40
+!byte $40,$53,$54,$40,$40,$53,$54,$40,$53,$54,$55,$54,$40,$40,$40,$40,$53,$54,$40,$40,$53,$54,$40,$40,$40,$40,$53,$54,$40,$53,$54,$40,$53,$54,$40,$40,$53,$54,$40,$40
+!byte $40,$53,$56,$40,$40,$55,$54,$40,$55,$54,$53,$54,$40,$40,$40,$40,$55,$54,$40,$40,$53,$56,$40,$40,$40,$40,$55,$54,$40,$53,$56,$40,$55,$54,$40,$40,$55,$54,$40,$40
+!byte $40,$55,$54,$40,$40,$53,$54,$40,$53,$56,$53,$54,$40,$40,$57,$58,$53,$54,$40,$40,$53,$54,$40,$40,$57,$58,$53,$56,$40,$55,$54,$40,$53,$54,$40,$40,$55,$56,$40,$40
+!byte $40,$53,$54,$57,$58,$59,$56,$57,$59,$54,$59,$56,$57,$58,$5a,$5b,$53,$54,$57,$58,$59,$54,$57,$58,$5a,$5b,$59,$54,$40,$53,$54,$40,$59,$56,$57,$58,$53,$54,$40,$40
 !byte $58,$5c,$5d,$5a,$5b,$5c,$5d,$5a,$5c,$5d,$5c,$5d,$5a,$5b,$57,$58,$5c,$5d,$5a,$5b,$5c,$5d,$5a,$5b,$57,$58,$5c,$5d,$40,$5c,$5d,$40,$5c,$5d,$5a,$5b,$5c,$5d,$57,$58
 !byte $5b,$5e,$5f,$40,$40,$5e,$5f,$40,$5a,$5b,$5e,$5f,$40,$40,$5a,$5b,$5e,$5f,$40,$40,$5e,$5f,$40,$40,$5a,$5b,$5e,$5f,$40,$5e,$5f,$40,$5e,$5f,$40,$40,$5e,$5f,$5a,$5b
+
+
+;----------------------------------------------------------------------------
+; DATA logo
+;----------------------------------------------------------------------------
+
+logo:
+; Sprite2asm trees-logo-ch00-mcff.png 25 mei 2020 21:14:57
+; charmap 280 bytes (40 x 7)
+!byte $00,$00,$00,$00,$01,$01,$01,$01,$01,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+!byte $00,$00,$00,$01,$01,$00,$00,$01,$01,$00,$01,$01,$01,$01,$01,$00,$00,$01,$01,$00,$00,$01,$01,$00,$01,$01,$00,$00,$01,$01,$00,$01,$01,$00,$00,$01,$01,$00,$00,$00
+!byte $00,$00,$00,$01,$01,$01,$00,$00,$00,$00,$01,$01,$00,$00,$01,$01,$00,$01,$01,$00,$00,$01,$01,$00,$01,$01,$01,$00,$01,$01,$00,$01,$01,$00,$01,$01,$00,$00,$00,$00
+!byte $00,$00,$00,$00,$01,$01,$01,$01,$00,$00,$01,$01,$00,$00,$01,$01,$00,$01,$01,$00,$00,$01,$01,$00,$01,$01,$01,$01,$01,$01,$00,$01,$01,$01,$01,$00,$00,$00,$00,$00
+!byte $00,$00,$00,$00,$00,$00,$01,$01,$01,$00,$01,$01,$01,$01,$01,$00,$00,$01,$01,$00,$00,$01,$01,$00,$01,$01,$00,$01,$01,$01,$00,$01,$01,$00,$01,$01,$00,$00,$00,$00
+!byte $00,$00,$00,$01,$01,$00,$00,$01,$01,$00,$01,$01,$00,$00,$00,$00,$00,$01,$01,$00,$00,$01,$01,$00,$01,$01,$00,$00,$01,$01,$00,$01,$01,$00,$00,$01,$01,$00,$00,$00
+!byte $00,$00,$00,$01,$01,$01,$01,$01,$00,$00,$01,$01,$00,$00,$00,$00,$00,$00,$01,$01,$01,$01,$01,$00,$01,$01,$00,$00,$01,$01,$00,$01,$01,$00,$00,$01,$01,$00,$00,$00
+
+
+;----------------------------------------------------------------------------
+; CHARSET
+;----------------------------------------------------------------------------
+            * = $2000
+
+            !src "chars.inc"
 
 
 ;----------------------------------------------------------------------------
@@ -510,12 +548,3 @@ distant:
 SPRITE_OFFSET = (sprites and $3FFF) >> 6
 sprites:
             !src "sprites.inc"
-
-
-;----------------------------------------------------------------------------
-; CHARSET
-;----------------------------------------------------------------------------
-            * = $2000
-
-            !src "chars.inc"
-            !byte 0,0,0,0,0,0,0,0
