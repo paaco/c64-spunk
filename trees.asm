@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 1568 bytes exomized
+; 1663 bytes exomized
 
 ; variables
 !addr {
@@ -44,7 +44,7 @@ COLOR_PLANTS = GREEN
 COLOR_PLANTS_OUTLINE = BLACK
 
 *=$0801
-!byte $0c,$08,$b5,$07,$9e,$20,$32,$30,$36,$32,$00,$00,$00   ; SYS 2062
+!byte $0c,$08,$c0,$07,$9e,$20,$32,$30,$36,$32,$00,$00,$00   ; 1984 SYS 2062
 
 ;2062
             lda $02A6 ; $02A6/678:   Flag: TV Standard: $00 = NTSC, $01 = PAL
@@ -155,15 +155,6 @@ OK_its_PAL:
             lda #%11111111
             sta VIC_SPR_MC
 
-            ; Test calc X for tree 0
-            jsr calc_X
-            lda $FF ; MSB
-            sta Crown_X_MSB+1
-            sta Tree_X_MSB+1
-            lda ValueH ; X
-            sta Crown_X0+1
-            sta Tree_X0+1
-
             sei
 
             lda #$35        ; Bank out KERNAL and BASIC
@@ -206,32 +197,53 @@ loop:       inc $0404
             jmp loop
 
 
-; Convert sprite X-offsets from 9.7 value (range 0 .. 344)
+; place trees
+update_trees:
+            lda trees
+            sec
+            sbc #12     ; -24 shifted once
+            ldx trees+1
+            jsr calc_X
+            ; A contains X-position, $FF contains MSB as 0 or 1
+            sta Crown_X0+1
+            lda $FF ; MSB
+            sta Crown_X_MSB+1
+            lda trees
+            sec
+            sbc #6      ; -12 shifted once to center stem below crown
+            ldx trees+1
+            jsr calc_X
+            sta Tree_X0+1
+            lda $FF ; MSB
+            sta Tree_X_MSB+1
+            rts
+
+; Convert sprite X-offsets from 9.7 value (range 0 .. 368) to MSB + X-pos in A
+; calculate X position A=bits 8..1, X=00/80
+;
 ; high     low
 ; 87654321 0ddddddd
 ; ^ends up in MSB
-; 1) subtract 24 (range -24 .. 320)
-; 2) for PAL subtract 8 for values < 0: so the range is 1E0 .. 1F7 000 .. 13F
-;    for NTSC don't subtract 8, so the NTSC range is    1E8 .. 1FF 000 .. 13F
+; 1) subtract 24 (range -24 .. 344)
+; 2) for PAL subtract 8 for values < 0: so the range is 1E0 .. 1F7 000 .. 16F
+;    for NTSC don't subtract 8, so the NTSC range is    1E8 .. 1FF 000 .. 16F
 ; see https://bumbershootsoft.wordpress.com/2019/07/01/c64-fat-sprite-workarounds/
 calc_X:
-            lda ValueH
-            sec
-            sbc #12     ; -24 shifted once
-            ldx ValueL  ; copy bit 7 into carry
-            cpx #$80    ; so bit 0 from x-coordinate ends in carry
-            rol         ; 7..0 carry contains MSB bit 8
-            rol $FF     ; store MSB
-            ; subtract 8 if A < 0 (only for PAL, don't do this on NTSC, i.e. subtract 0)
-            cmp #$00
-            bpl +
-            ;sec carry always set
-NTSC_fix1:  sbc #8
-+           sta ValueH ; actual sprite X-value
+            cpx #$80    ; copy bit 7 from X into carry so bit 0 from X-coordinate ends in carry
+            rol         ; 7..0, carry contains MSB bit 8
+            ; C=0: pos <= 255; C=1: pos >=256 or negative if >=$E0
+            bcs .check
+            ; C=MSB=0 here
+            rol $FF     ; store MSB somewhere
             rts
-
-ValueH:     !byte 61 >> 1
-ValueL:     !byte (61 % 2) * $80
+.check:     ; C=MSB=1 here
+            rol $FF     ; store MSB somewhere
+            ; subtract 8 if A < 0 (only for PAL, don't do this on NTSC, i.e. subtract 0)
+            cmp #$E0
+            bcc +
+            ;sec carry already set
+NTSC_fix1:  sbc #8
++           rts         ; A = sprite X-position
 
 
 ;----------------------------------------------------------------------------
@@ -335,6 +347,15 @@ IRQ_Top:
             lda #%00111111
             sta VIC_SPR_DWIDTH
 
+            jsr update_trees
+            lda trees+1 ; low
+            sec
+            sbc #$40    ; half pixel
+            sta trees+1 ; update low
+            bcs +       ; no borrow? then ok
+            dec trees
++
+
 Crown_X0:   lda #50
 Crown_P0:   sta $D000       ; X0
             lda #100
@@ -437,21 +458,21 @@ Remaining_IRQ_Set_reg:
 
 ; Raster IRQs (starts at InitRaster/InitIRQ and is the last in this list)
 Raster_Line:
-            !byte TREETOPY + 42*0 + 40
-            !byte 50 + 8*6
-            !byte TREETOPY + 42*1 + 39
-            !byte 50 + 8*15
+            !byte TREETOPY + 42*0 + 40 ; 90
+            !byte TREETOPY + 42*1 + 39 ; 131
+            !byte 50 + 8*11 - 1 ; 137 (-1 to avoid flickering)
+            !byte 50 + 8*15 ; 170
             !byte TREETOPY + 42*2 + 40 ; 174
-            !byte 50 + 8*17
-            !byte 50 + 8*19
+            !byte 50 + 8*17 ; 186
+            !byte 50 + 8*19 ; 202
             !byte TREETOPY + 42*3 + 40 ; 216
-            !byte 50 + 8*22
-InitRaster: !byte RASTERTOP
+            !byte 50 + 8*22 ; 226
+InitRaster: !byte RASTERTOP ; 40
 
 Raster_IRQ:
             !byte <IRQ_Bump_sprites
-            !byte <IRQ_Set_reg
             !byte <IRQ_Start_trees
+            !byte <IRQ_Set_reg
             !byte <IRQ_Set_x_scroll
             !byte <IRQ_Bump_sprites
             !byte <IRQ_Set_x_scroll
@@ -462,8 +483,8 @@ InitIRQ:    !byte <IRQ_Top
 
 Raster_Data1:
             !byte TREETOPY + 42*1
-            !byte COLOR_BACKGROUND
             !byte TREETOPY + 42*2
+            !byte COLOR_BACKGROUND
             !byte %00010000+7
             !byte TREETOPY + 42*3
             !byte %00010000+6
@@ -474,8 +495,8 @@ Raster_Data1:
 
 Raster_Data2:
             !byte 0
-            !byte $21
             !byte 0
+            !byte $21
             !byte 0
             !byte 0
             !byte 0
@@ -489,8 +510,18 @@ Raster_Data2:
 ; DATA
 ;----------------------------------------------------------------------------
 
-; TODO: x-offsets should be 2 bytes: highest 8 bits in one (looks like x-value/2)
-; TODO: and lowest bit + 7 bits behind comma in another
+; X-positions of trees 9.7 (87654321 0ddddddd) range: (left outside view) 0 .. 368 ($B8) (right outside view)
+trees:
+            !byte $B8,0
+            !byte 0,0
+            !byte 0,0
+            !byte 0,0
+            !byte 0,0
+            !byte 0,0
+
+; MSBs
+msb:
+            !byte 1,2,4,8,16,32,64,128
 
 
 ;----------------------------------------------------------------------------
