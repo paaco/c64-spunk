@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 1663 bytes exomized
+; 1732 bytes exomized
 
 ; variables
 !addr {
@@ -34,6 +34,7 @@ GREEN=5
 BLUE=6
 ORANGE=8
 BROWN=9
+LIGHT_GREEN=13
 LIGHT_BLUE=14
 
 COLOR_BORDER = BLACK
@@ -42,6 +43,10 @@ COLOR_DISTANT = BLACK
 COLOR_BACKGROUND = BROWN
 COLOR_PLANTS = GREEN
 COLOR_PLANTS_OUTLINE = BLACK
+COLOR_CROWN_HIGHLIGHT = LIGHT_GREEN
+COLOR_CROWN_BRANCHES = ORANGE
+COLOR_TREES_LIGHT = ORANGE
+COLOR_TREES_DARK = BLACK
 
 *=$0801
 !byte $0c,$08,$c0,$07,$9e,$20,$32,$30,$36,$32,$00,$00,$00   ; 1984 SYS 2062
@@ -98,7 +103,7 @@ OK_its_PAL:
 -           lda logo,x
             bmi +
             sta $0400+40*LOGOY,x
-            lda #WHITE
+            lda #PURPLE
             sta $D800+40*LOGOY,x
 +           lda logo+HALFLOGO,x
             bmi +
@@ -128,25 +133,6 @@ OK_its_PAL:
             cpy #40
             bne -
 
-            lda #BLACK
-            sta VIC_SPR_MC1
-            lda #ORANGE
-            sta VIC_SPR_MC2
-            ldx #5
-            stx VIC_SPR_COL+0
-            ;dex
-            stx VIC_SPR_COL+1
-            ldx #2
-            stx VIC_SPR_COL+2
-            ldx #7
-            stx VIC_SPR_COL+3
-            ldx #13
-            stx VIC_SPR_COL+4
-            ;dex
-            stx VIC_SPR_COL+5
-            ldx #PURPLE
-            stx VIC_SPR_COL+7 ; SPUNK
-
             ; enable sprites
             lda #%11111111
             sta VIC_SPR_ENA
@@ -172,9 +158,6 @@ OK_its_PAL:
 
             lda #$35        ; Bank out KERNAL and BASIC
             sta $01
-
-            ;lda #%00010100 + MEM_VIC_DD00 ; select VIC bank
-            ;sta $DD00
 
             lda #$7F        ; Disable and ACK CIA timers
             bit $DC0D
@@ -265,7 +248,6 @@ NTSC_fix1:  sbc #8
             !align 255,0,0
 IRQ_PAGE:
 
-; TODO: update SPR_MC1 to black
 ; TODO: update sprites before/behind characters
 ; TODO: make sure tree-leaves lowest row is same as top row from tree-stem
 
@@ -325,8 +307,6 @@ Tree_P0:    sta $D000       ; X0
             sta $D00A       ; X5
 Tree_X_MSB: lda #$30
             sta VIC_SPR_X_MSB
-            lda #BLACK
-            sta VIC_SPR_MC1
             jmp INC_SPRITE_PTRS_END_IRQ
 
 
@@ -334,6 +314,23 @@ Tree_X_MSB: lda #$30
 IRQ_Set_reg:
             ; outside of IRQ page since we have to wait anyway
             jmp Remaining_IRQ_Set_reg
+
+
+; set colors MC2 and trees
+IRQ_Set_colors:
+            pha
+            tya
+            pha
+            lda #WHITE
+            sta VIC_SPR_MC2
+            lda #COLOR_TREES_LIGHT
+            sta VIC_SPR_COL+0
+            sta VIC_SPR_COL+1
+            sta VIC_SPR_COL+2
+            sta VIC_SPR_COL+3
+            sta VIC_SPR_COL+4
+            sta VIC_SPR_COL+5
+            jmp END_IRQ
 
 
 ; set X-scroll
@@ -353,12 +350,30 @@ IRQ_Top:
             tya
             pha
 
-            ; lda #$D
-            ; sta VIC_SPR_MC1
+            lda #COLOR_CROWN_HIGHLIGHT
+            sta VIC_SPR_MC1
+            lda #COLOR_CROWN_BRANCHES
+            sta VIC_SPR_MC2
             lda #%00011000 ; Text MC + 40 columns + X-scroll
             sta $D016
             lda #%00111111
             sta VIC_SPR_DWIDTH
+
+            ; colors
+            ldx #5
+            stx VIC_SPR_COL+0
+            ;dex
+            stx VIC_SPR_COL+1
+            ldx #2
+            stx VIC_SPR_COL+2
+            ldx #7
+            stx VIC_SPR_COL+3
+            ldx #13
+            stx VIC_SPR_COL+4
+            ;dex
+            stx VIC_SPR_COL+5
+            ldx #PURPLE
+            stx VIC_SPR_COL+7 ; SPUNK
 
             jsr update_trees
             lda trees+1 ; low
@@ -368,7 +383,6 @@ IRQ_Top:
             bcs +       ; no borrow? then ok
             dec trees
 +
-
 Crown_X0:   lda #50
 Crown_P0:   sta $D000       ; X0
             lda #100
@@ -389,7 +403,7 @@ Crown_P0:   sta $D000       ; X0
             ; Purple Spunk
             lda #30
             sta $D00E       ; X7
-            lda #170
+            lda #150
             sta $D00F       ; Y7
 Crown_X_MSB:lda #$30
             sta VIC_SPR_X_MSB
@@ -469,11 +483,16 @@ Remaining_IRQ_Set_reg:
 ; DATA raster splits
 ;----------------------------------------------------------------------------
 
+; crowns are:        MC1=white(highlight), MC2=branches(orange), COL=leaves: only MC2 and COL visible
+; trees/players are: MC1=black, MC2=white, COL=trees/players; MC2 not used in trees
+
 ; Raster IRQs (starts at InitRaster/InitIRQ and is the last in this list)
 Raster_Line:
             !byte TREETOPY + 42*0 + 40 ; 90
+            !byte TREETOPY + 42*1 + 35 ; 127 ; fix MC1
             !byte TREETOPY + 42*1 + 39 ; 131
             !byte 50 + 8*11 - 1 ; 137 (-1 to avoid flickering)
+            !byte 50 + 8*11 + 2 ; 139
             !byte 50 + 8*15 ; 170
             !byte TREETOPY + 42*2 + 40 ; 174
             !byte 50 + 8*17 ; 186
@@ -484,8 +503,10 @@ InitRaster: !byte RASTERTOP ; 40
 
 Raster_IRQ:
             !byte <IRQ_Bump_sprites
+            !byte <IRQ_Set_reg
             !byte <IRQ_Start_trees
             !byte <IRQ_Set_reg
+            !byte <IRQ_Set_colors
             !byte <IRQ_Set_x_scroll
             !byte <IRQ_Bump_sprites
             !byte <IRQ_Set_x_scroll
@@ -496,8 +517,10 @@ InitIRQ:    !byte <IRQ_Top
 
 Raster_Data1:
             !byte TREETOPY + 42*1
+            !byte COLOR_TREES_DARK
             !byte TREETOPY + 42*2
             !byte COLOR_BACKGROUND
+            !byte 0
             !byte %00010000+7
             !byte TREETOPY + 42*3
             !byte %00010000+6
@@ -508,8 +531,10 @@ Raster_Data1:
 
 Raster_Data2:
             !byte 0
+            !byte <VIC_SPR_MC1
             !byte 0
-            !byte $21
+            !byte <$D021
+            !byte 0
             !byte 0
             !byte 0
             !byte 0
@@ -575,7 +600,9 @@ logo:
 !byte $80,$80,$80,$00,$00,$80,$80,$00,$00,$80,$00,$00,$80,$80,$80,$80,$80,$00,$00,$80,$80,$00,$00,$80,$00,$00,$80,$80,$00,$00,$80,$00,$00,$80,$80,$00,$00,$80,$80,$80
 !byte $80,$80,$80,$00,$00,$00,$00,$00,$80,$80,$00,$00,$80,$80,$80,$80,$80,$80,$00,$00,$00,$00,$00,$80,$00,$00,$80,$80,$00,$00,$80,$00,$00,$80,$80,$00,$00,$80,$80,$80
 !byte $80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80
-!byte $80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80, 22, 46, 19, 46,$80, 20,  8,  5,$80, 18,  5, 19, 20,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80,$80
+;the purple skunk v.s. the rest
+!byte $80,$80,$80,$80,$80, 20,  8,  5,$80, 16, 21, 18, 16, 12,  5,$80, 19, 11, 21, 14, 11,$80, 22, 46, 19, 46,$80, 20,  8,  5,$80, 18,  5, 19, 20,$80,$80,$80,$80,$80
+
 
 ;----------------------------------------------------------------------------
 ; CHARSET
