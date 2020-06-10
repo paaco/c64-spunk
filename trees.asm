@@ -315,8 +315,8 @@ IRQ_Set_reg:
             jmp Remaining_IRQ_Set_reg
 
 
-; set colors MC2 and trees
-IRQ_Set_colors:
+; set tree colors
+IRQ_Set_tree_colors:
             pha
             tya
             pha
@@ -504,7 +504,7 @@ Raster_IRQ:
             !byte <IRQ_Set_reg
             !byte <IRQ_Start_trees
             !byte <IRQ_Set_reg
-            !byte <IRQ_Set_colors
+            !byte <IRQ_Set_tree_colors
             !byte <IRQ_Set_reg
             !byte <IRQ_Set_x_scroll
             !byte <IRQ_Bump_sprites
