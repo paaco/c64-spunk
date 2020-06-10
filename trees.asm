@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 1804 bytes exomized
+; 1997 bytes exomized
 
 ; variables
 !addr {
@@ -249,7 +249,6 @@ NTSC_fix1:  sbc #8
 IRQ_PAGE:
 
 ; TODO: update sprites before/behind characters
-; TODO: make sure tree-leaves lowest row is same as top row from tree-stem
 
 ; update sprite pointers only
 IRQ_Bump_sprites:
@@ -321,8 +320,6 @@ IRQ_Set_colors:
             pha
             tya
             pha
-            lda #WHITE
-            sta VIC_SPR_MC2
             lda #COLOR_TREES_LIGHT
             sta VIC_SPR_COL+0
             sta VIC_SPR_COL+1
@@ -421,15 +418,15 @@ Crown_X_MSB:lda #$30
             sta SPRITE_PTR+1
             lda #SPRITE_OFFSET+10
             sta SPRITE_PTR+2
-            lda #SPRITE_OFFSET
+            lda #SPRITE_OFFSET+15
             sta SPRITE_PTR+3
-            lda #SPRITE_OFFSET+5
+            lda #SPRITE_OFFSET+20
             sta SPRITE_PTR+4
-            lda #SPRITE_OFFSET+10
+            lda #SPRITE_OFFSET
             sta SPRITE_PTR+5
-            lda #SPRITE_OFFSET+15
+            lda #SPRITE_OFFSET+25
             sta SPRITE_PTR+6
-            lda #SPRITE_OFFSET+15
+            lda #SPRITE_OFFSET+25
             sta SPRITE_PTR+7
 
             lda #COLOR_SKY
@@ -492,7 +489,8 @@ Raster_Line:
             !byte TREETOPY + 42*1 + 35 ; 127 ; fix MC1
             !byte TREETOPY + 42*1 + 39 ; 131
             !byte 50 + 8*11 - 1 ; 137 (-1 to avoid flickering)
-            !byte 50 + 8*11 + 2 ; 139
+            !byte 50 + 8*11 + 2 ; 139 fix COL
+            !byte 50 + 8*11 + 5 ; 142 fix MC2
             !byte 50 + 8*15 ; 170
             !byte TREETOPY + 42*2 + 40 ; 174
             !byte 50 + 8*17 ; 186
@@ -507,6 +505,7 @@ Raster_IRQ:
             !byte <IRQ_Start_trees
             !byte <IRQ_Set_reg
             !byte <IRQ_Set_colors
+            !byte <IRQ_Set_reg
             !byte <IRQ_Set_x_scroll
             !byte <IRQ_Bump_sprites
             !byte <IRQ_Set_x_scroll
@@ -521,6 +520,7 @@ Raster_Data1:
             !byte TREETOPY + 42*2
             !byte COLOR_BACKGROUND
             !byte 0
+            !byte WHITE
             !byte %00010000+7
             !byte TREETOPY + 42*3
             !byte %00010000+6
@@ -535,6 +535,7 @@ Raster_Data2:
             !byte 0
             !byte <$D021
             !byte 0
+            !byte <VIC_SPR_MC2
             !byte 0
             !byte 0
             !byte 0
