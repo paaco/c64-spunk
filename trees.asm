@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 1997 bytes exomized
+; 2063 bytes exomized
 
 ; variables
 !addr {
@@ -114,24 +114,7 @@ OK_its_PAL:
             cpx #HALFLOGO
             bne -
 
-            ; draw plants row
-            clc
-            ldy #0
-            ldx #0 ; TODO initial offset (0..10)
--           txa
-            adc #64+32
-            sta $0400+22*40,y
-            adc #11
-            sta $0400+23*40,y
-            adc #11
-            sta $0400+24*40,y
-            inx
-            cpx #11
-            bne +
-            ldx #0
-+           iny
-            cpy #40
-            bne -
+            jsr draw_plants
 
             ; enable sprites
             lda #%11111111
@@ -188,8 +171,9 @@ OK_its_PAL:
 
             cli
 
-            ; run everything from IRQ
+            ; TODO sync the main loop to the raster IRQ
 loop:       inc $0404
+            jsr draw_plants
             jmp loop
 
 
@@ -240,6 +224,75 @@ calc_X:
             ;sec carry already set
 NTSC_fix1:  sbc #8
 +           rts         ; A = sprite X-position
+
+
+; draw plants row (full redraw takes as long as scrolling and updating)
+draw_plants:
+            lda plants+1
+            clc
+            adc #$16
+            sta plants+1
+            bcc +           ; no borrow? then ok
+            inc plants
++
+            lda plants
+            and #$07        ; X-scroll
+            eor #$07        ; reverse
+            ora #%00010000  ; Text MC + 38 columns
+            sta plants_X ; TODO DEBUG
+
+            lda plants
+            cmp #8*11
+            bcc +           ; borrow? then smaller thus ok
+            sbc #8*11       ; handle modulo 11 overflow
+            sta plants
++           lsr
+            lsr
+            lsr
+            tax             ; initial offset (0..10)
+
+            ; X=initial offset (0..10)
+            clc
+            ldy #0
+-           txa
+            adc #64+32
+            sta $0400+22*40,y
+            adc #11
+            sta $0400+23*40,y
+            adc #11
+            sta $0400+24*40,y
+            inx
+            cpx #11
+            bne +
+            ldx #0
++           iny
+            cpy #40
+            bne -
+            rts
+
+
+; RANDOM routine from https://codebase64.org/doku.php?id=base:16bit_xorshift_random_generator
+rng_zp_low = $02
+rng_zp_high = $03
+        ; seeding
+        LDA #1 ; seed, can be anything except 0
+        STA rng_zp_low
+        LDA #0
+        STA rng_zp_high
+        ; the RNG. You can get 8-bit random numbers in A or 16-bit numbers
+        ; from the zero page addresses. Leaves X/Y unchanged.
+random  LDA rng_zp_high
+        LSR
+        LDA rng_zp_low
+        ROR
+        EOR rng_zp_high
+        STA rng_zp_high ; high part of x ^= x << 7 done
+        ROR             ; A has now x >> 9 and high bit comes from low byte
+        EOR rng_zp_low
+        STA rng_zp_low  ; x ^= x >> 9 and the low part of x ^= x << 7 done
+        EOR rng_zp_high
+        STA rng_zp_high ; x ^= x << 8 done
+        RTS
 
 
 ;----------------------------------------------------------------------------
@@ -526,7 +579,7 @@ Raster_Data1:
             !byte %00010000+6
             !byte %00010000+5
             !byte TREETOPY + 42*4
-            !byte %00010000+4
+plants_X:   !byte %00010000+4
             !byte 0
 
 Raster_Data2:
@@ -557,6 +610,12 @@ trees:
             !byte 0,0
             !byte 0,0
             !byte 0,0
+
+; X-offset of plants 8.8 fixed point .8 is sub-pixels speed, lowest 3 bits is X-scroll, highest 5 is char scroll (mod 11)
+; increase to scroll left
+plants:
+            !byte 0,0
+
 
 ; MSBs
 msb:
