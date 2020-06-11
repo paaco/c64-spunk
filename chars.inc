@@ -70,3 +70,5 @@
 !byte $ea,$fa,$bf,$ee,$bf,$ee,$ff,$fe
 !byte $ab,$ae,$bb,$ff,$bf,$ee,$ff,$ee
 !byte $ba,$ea,$bf,$ee,$bb,$fe,$ff,$ee
+;i ()
+!byte $18,$00,$38,$18,$18,$18,$3c,$00

@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 2063 bytes exomized
+; 2190 bytes exomized
 
 ; variables
 !addr {
@@ -32,6 +32,7 @@ CYAN=3
 PURPLE=4
 GREEN=5
 BLUE=6
+YELLOW=7
 ORANGE=8
 BROWN=9
 LIGHT_GREEN=13
@@ -69,8 +70,11 @@ OK_its_PAL:
             sta VIC_COL_TXT_MC2
             lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
             sta $D018
+            lda #%11111111
+            sta VIC_SPR_ENA
+            sta VIC_SPR_MC
 
-            ; cls
+            ; cls TODO can we shorten this? most is overwritten below anyway
             ldx #0
 -           lda #$20
             sta $0400,x
@@ -114,17 +118,17 @@ OK_its_PAL:
             cpx #HALFLOGO
             bne -
 
-            jsr draw_plants
+            ; introtext
+            INTROTEXTY=16
+            ldx #introtext_end-introtext-1
+-           lda introtext,x
+            sta $0400+INTROTEXTY*40,x
+            lda #YELLOW
+            sta $D800+INTROTEXTY*40,x
+            dex
+            bne -
 
-            ; enable sprites
-            lda #%11111111
-            sta VIC_SPR_ENA
-            lda #%00111111
-            sta VIC_SPR_DHEIGHT
-            sta VIC_SPR_DWIDTH
-            sta VIC_SPR_BEHIND ; TODO this is a HACK for now do properly
-            lda #%11111111
-            sta VIC_SPR_MC
+            jsr draw_plants
 
             sei
 
@@ -239,7 +243,7 @@ draw_plants:
             and #$07        ; X-scroll
             eor #$07        ; reverse
             ora #%00010000  ; Text MC + 38 columns
-            sta plants_X ; TODO DEBUG
+            sta Plants_X
 
             lda plants
             cmp #8*11
@@ -300,8 +304,6 @@ random  LDA rng_zp_high
 ;----------------------------------------------------------------------------
             !align 255,0,0
 IRQ_PAGE:
-
-; TODO: update sprites before/behind characters
 
 ; update sprite pointers only
 IRQ_Bump_sprites:
@@ -380,6 +382,8 @@ IRQ_Set_tree_colors:
             sta VIC_SPR_COL+3
             sta VIC_SPR_COL+4
             sta VIC_SPR_COL+5
+            lda #%00111111
+            sta VIC_SPR_DHEIGHT
             jmp END_IRQ
 
 
@@ -406,8 +410,10 @@ IRQ_Top:
             sta VIC_SPR_MC2
             lda #%00011000 ; Text MC + 40 columns + X-scroll
             sta $D016
-            lda #%00111111
-            sta VIC_SPR_DWIDTH
+            lda #%11111111
+            sta VIC_SPR_DWIDTH  ; just set all sprites double width even though only 6 are shown
+            sta VIC_SPR_DHEIGHT ; just set all sprites double width even though only 6 are shown
+            sta VIC_SPR_BEHIND  ; all sprites behind characters
 
             ; colors
             ldx #5
@@ -543,13 +549,15 @@ Raster_Line:
             !byte TREETOPY + 42*1 + 39 ; 131
             !byte 50 + 8*11 - 1 ; 137 (-1 to avoid flickering)
             !byte 50 + 8*11 + 2 ; 139 fix COL
-            !byte 50 + 8*11 + 5 ; 142 fix MC2
+            !byte 50 + 8*11 + 5 ; 143 fix MC2
+            !byte 50 + 8*11 + 7 ; 146 no sprites foreground
             !byte 50 + 8*15 ; 170
             !byte TREETOPY + 42*2 + 40 ; 174
             !byte 50 + 8*17 ; 186
             !byte 50 + 8*19 ; 202
             !byte TREETOPY + 42*3 + 40 ; 216
             !byte 50 + 8*22 ; 226
+            !byte 50 + 8*22 + 3 ; 228
 InitRaster: !byte RASTERTOP ; 40
 
 Raster_IRQ:
@@ -559,12 +567,14 @@ Raster_IRQ:
             !byte <IRQ_Set_reg
             !byte <IRQ_Set_tree_colors
             !byte <IRQ_Set_reg
+            !byte <IRQ_Set_reg
             !byte <IRQ_Set_x_scroll
             !byte <IRQ_Bump_sprites
             !byte <IRQ_Set_x_scroll
             !byte <IRQ_Set_x_scroll
             !byte <IRQ_Bump_sprites
             !byte <IRQ_Set_x_scroll
+            !byte <IRQ_Set_reg
 InitIRQ:    !byte <IRQ_Top
 
 Raster_Data1:
@@ -574,12 +584,14 @@ Raster_Data1:
             !byte COLOR_BACKGROUND
             !byte 0
             !byte WHITE
+Spr_Behind: !byte $FF;%00000000 ; no sprites behind characters
             !byte %00010000+7
             !byte TREETOPY + 42*3
             !byte %00010000+6
             !byte %00010000+5
             !byte TREETOPY + 42*4
-plants_X:   !byte %00010000+4
+Plants_X:   !byte %00010000+4
+            !byte %11111111 ; all sprites behind characters
             !byte 0
 
 Raster_Data2:
@@ -589,12 +601,14 @@ Raster_Data2:
             !byte <$D021
             !byte 0
             !byte <VIC_SPR_MC2
+            !byte <VIC_SPR_BEHIND
             !byte 0
             !byte 0
             !byte 0
             !byte 0
             !byte 0
             !byte 0
+            !byte <VIC_SPR_BEHIND
             !byte 0
 
 
@@ -663,6 +677,15 @@ logo:
 ;the purple skunk v.s. the rest
 !byte $80,$80,$80,$80,$80, 20,  8,  5,$80, 16, 21, 18, 16, 12,  5,$80, 19, 11, 21, 14, 11,$80, 22, 46, 19, 46,$80, 20,  8,  5,$80, 18,  5, 19, 20,$80,$80,$80,$80,$80
 
+introtext:
+;     12345678901234567890123456789012345678
+!scr "     will spunk outrun his forest       "
+!scr "  friends and grab the most apples?     "
+!scr "                                        "
+!scr "          press fire to start           "
+!scr "                                        "
+!scr "      (c)2020 by paaco/twa",129,"n pa",129,"n"
+introtext_end:
 
 ;----------------------------------------------------------------------------
 ; CHARSET
