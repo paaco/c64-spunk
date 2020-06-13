@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 2190 bytes exomized
+; 2234 bytes exomized
 
 ; variables
 !addr {
@@ -73,6 +73,7 @@ OK_its_PAL:
             lda #%11111111
             sta VIC_SPR_ENA
             sta VIC_SPR_MC
+            sta $DC00       ; disconnect keyboard
 
             ; cls TODO can we shorten this? most is overwritten below anyway
             ldx #0
@@ -181,6 +182,10 @@ loop:       inc $0404
             jmp loop
 
 
+;----------------
+; handle sprites
+;----------------
+
 ; place trees
 update_trees:
             lda trees
@@ -230,8 +235,42 @@ NTSC_fix1:  sbc #8
 +           rts         ; A = sprite X-position
 
 
+; move Spunk based on joystick
+move_Spunk:
+            lda $DC00           ; Joystick A in control port 2 0=active: 1=up 2=down 4=left 8=right 16=fire
+            and $DC01           ; Joystick B in control port 1 0=active: 1=up 2=down 4=left 8=right 16=fire
+            tay ; backup
+            and #$01
+            bne +
+            ; UP
+            lda Spunk_Y+1
+            sec
+            sbc #$02
+            cmp #150
+            bcs .ok
+            lda #150
+.ok:        sta Spunk_Y+1
++           tya
+            and #$02
+            bne +
+            ; DOWN
+            lda Spunk_Y+1
+            clc
+            adc #$02
+            cmp #220
+            bcc .ok2
+            lda #220
+.ok2:       sta Spunk_Y+1
++           rts
+
+
+;-------------------
+; handle background
+;-------------------
+
 ; draw plants row (full redraw takes as long as scrolling and updating)
 draw_plants:
+            ; TODO DEBUG move plant movement elsewhere
             lda plants+1
             clc
             adc #$16
@@ -274,6 +313,10 @@ draw_plants:
             bne -
             rts
 
+
+;------
+; prng
+;------
 
 ; RANDOM routine from https://codebase64.org/doku.php?id=base:16bit_xorshift_random_generator
 rng_zp_low = $02
@@ -398,6 +441,19 @@ IRQ_Set_x_scroll:
             jmp END_IRQ
 
 
+; set X-scroll and sprite priority
+IRQ_Set_x_scroll_2:
+            pha
+            tya
+            pha
+            ldy ZP_IRQNUMBER
+            lda Raster_Data1,y  ; data
+            sta $D016
+            lda #$FF
+            sta VIC_SPR_BEHIND
+            jmp END_IRQ
+
+
 ; setup all sprites
 IRQ_Top:
             pha
@@ -457,9 +513,9 @@ Crown_P0:   sta $D000       ; X0
             lda #210
             sta $D00D       ; Y6
             ; Purple Spunk
-            lda #30
+            lda #80
             sta $D00E       ; X7
-            lda #150
+Spunk_Y:    lda #150
             sta $D00F       ; Y7
 Crown_X_MSB:lda #$30
             sta VIC_SPR_X_MSB
@@ -490,6 +546,8 @@ Crown_X_MSB:lda #$30
 
             lda #COLOR_SKY
             sta $D021
+
+            jsr move_Spunk
 
             lda #$FF
             sta ZP_IRQNUMBER
@@ -550,14 +608,13 @@ Raster_Line:
             !byte 50 + 8*11 - 1 ; 137 (-1 to avoid flickering)
             !byte 50 + 8*11 + 2 ; 139 fix COL
             !byte 50 + 8*11 + 5 ; 143 fix MC2
-            !byte 50 + 8*11 + 7 ; 146 no sprites foreground
-            !byte 50 + 8*15 ; 170
+            !byte 50 + 8*11 + 7 ; 146 set sprites background/front
+            !byte 50 + 8*15 ; 170 ; scroll top level
             !byte TREETOPY + 42*2 + 40 ; 174
-            !byte 50 + 8*17 ; 186
-            !byte 50 + 8*19 ; 202
+            !byte 50 + 8*17 ; 186 ; scroll mid level
+            !byte 50 + 8*19 ; 202 ; scroll bottom level
             !byte TREETOPY + 42*3 + 40 ; 216
-            !byte 50 + 8*22 ; 226
-            !byte 50 + 8*22 + 3 ; 228
+            !byte 50 + 8*22 ; 226 ; scroll plants + all sprites background
 InitRaster: !byte RASTERTOP ; 40
 
 Raster_IRQ:
@@ -573,8 +630,7 @@ Raster_IRQ:
             !byte <IRQ_Set_x_scroll
             !byte <IRQ_Set_x_scroll
             !byte <IRQ_Bump_sprites
-            !byte <IRQ_Set_x_scroll
-            !byte <IRQ_Set_reg
+            !byte <IRQ_Set_x_scroll_2
 InitIRQ:    !byte <IRQ_Top
 
 Raster_Data1:
@@ -584,14 +640,13 @@ Raster_Data1:
             !byte COLOR_BACKGROUND
             !byte 0
             !byte WHITE
-Spr_Behind: !byte $FF;%00000000 ; no sprites behind characters
+Spr_Behind: !byte 0;$FF;%00000000 ; no sprites behind characters
             !byte %00010000+7
             !byte TREETOPY + 42*3
             !byte %00010000+6
             !byte %00010000+5
             !byte TREETOPY + 42*4
 Plants_X:   !byte %00010000+4
-            !byte %11111111 ; all sprites behind characters
             !byte 0
 
 Raster_Data2:
@@ -608,7 +663,6 @@ Raster_Data2:
             !byte 0
             !byte 0
             !byte 0
-            !byte <VIC_SPR_BEHIND
             !byte 0
 
 
