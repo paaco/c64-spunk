@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 2234 bytes exomized
+; 2357 bytes exomized
 
 ; variables
 !addr {
@@ -25,6 +25,9 @@ VIC_SPR_COL = $D027
 ; constants
 RASTERTOP=40            ; top raster irq
 TREETOPY=50             ; first y-position of trees
+; animation frames
+FRAME_SPUNK_WALK=SPRITE_OFFSET + (sprites_spunk-sprites)/64
+FRAME_SPUNK_JUMP=FRAME_SPUNK_WALK+3
 
 BLACK=0
 WHITE=1
@@ -239,6 +242,7 @@ NTSC_fix1:  sbc #8
 move_Spunk:
             lda $DC00           ; Joystick A in control port 2 0=active: 1=up 2=down 4=left 8=right 16=fire
             and $DC01           ; Joystick B in control port 1 0=active: 1=up 2=down 4=left 8=right 16=fire
+            and #%00011111      ; ignore other bits not from the joystick
             tay ; backup
             and #$01
             bne +
@@ -261,8 +265,25 @@ move_Spunk:
             bcc .ok2
             lda #220
 .ok2:       sta Spunk_Y+1
-+           rts
++           cpy #%00011111
+            bne .animate
+            ; reset anim frame
+            ldx #FRAME_SPUNK_WALK
+            lda #0
+            beq .anim_ok ; jmp always
+.animate:   dec delay
+            bpl .ok3
+            lda #4  ; delay
+            ldx Spunk_Ptr+1
+            inx
+            cpx #FRAME_SPUNK_JUMP
+            bne .anim_ok
+            ldx #FRAME_SPUNK_WALK
+.anim_ok:   sta delay
+            stx Spunk_Ptr+1
+.ok3:       rts
 
+delay:      !byte 0
 
 ;-------------------
 ; handle background
@@ -403,6 +424,7 @@ Tree_P0:    sta $D000       ; X0
             lda #<(300+12)
             sta $D00A       ; X5
 Tree_X_MSB: lda #$30
+            and #$7F ; DEBUG Spunk always 0-255
             sta VIC_SPR_X_MSB
             jmp INC_SPRITE_PTRS_END_IRQ
 
@@ -541,7 +563,7 @@ Crown_X_MSB:lda #$30
             sta SPRITE_PTR+5
             lda #SPRITE_OFFSET+25
             sta SPRITE_PTR+6
-            lda #SPRITE_OFFSET+25
+Spunk_Ptr:  lda #SPRITE_OFFSET+25
             sta SPRITE_PTR+7
 
             lda #COLOR_SKY
