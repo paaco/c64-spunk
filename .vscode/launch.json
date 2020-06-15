@@ -8,7 +8,8 @@
             "type": "asm",
             "request": "launch",
             "name": "trees",
-            "binary": "${workspaceFolder}/.cache/trees.prg"
+            "binary": "${workspaceFolder}/.cache/trees.prg",
+            "pc": "$080e"
         }
     ]
 }

@@ -1,11 +1,12 @@
 ;
 ; trees
 ;
-; 2357 bytes exomized
+; 2365 bytes exomized
 
 ; variables
 !addr {
 ZP_IRQNUMBER = $10      ; current raster IRQ
+ZP_MSB = $11            ; temp location for MSB calculation
 
 SPRITE_PTR = $07F8
 
@@ -23,7 +24,7 @@ VIC_SPR_COL = $D027
 }
 
 ; constants
-RASTERTOP=40            ; top raster irq
+RASTERTOP=30            ; top raster irq TODO why not just 0
 TREETOPY=50             ; first y-position of trees
 ; animation frames
 FRAME_SPUNK_WALK=SPRITE_OFFSET + (sprites_spunk-sprites)/64
@@ -62,6 +63,7 @@ COLOR_TREES_DARK = BLACK
             ; NTSC fix X-offset correction
             lda #0
             sta NTSC_fix1+1
+            sta NTSC_fix2+1
 
 OK_its_PAL:
             ; global colors and VIC settings
@@ -127,7 +129,7 @@ OK_its_PAL:
             ldx #introtext_end-introtext-1
 -           lda introtext,x
             sta $0400+INTROTEXTY*40,x
-            lda #YELLOW
+            lda #CYAN
             sta $D800+INTROTEXTY*40,x
             dex
             bne -
@@ -189,30 +191,8 @@ loop:       inc $0404
 ; handle sprites
 ;----------------
 
-; place trees
-update_trees:
-            lda trees
-            sec
-            sbc #12     ; -24 shifted once
-            ldx trees+1
-            jsr calc_X
-            ; A contains X-position, $FF contains MSB as 0 or 1
-            sta Crown_X0+1
-            lda $FF ; MSB
-            sta Crown_X_MSB+1
-            lda trees
-            sec
-            sbc #6      ; -12 shifted once to center stem below crown
-            ldx trees+1
-            jsr calc_X
-            sta Tree_X0+1
-            lda $FF ; MSB
-            sta Tree_X_MSB+1
-            rts
+; Sprite coordinates are 9.7 fixed point shifted 24 to account for x-expanded sprites
 
-; Convert sprite X-offsets from 9.7 value (range 0 .. 368) to MSB + X-pos in A
-; calculate X position A=bits 8..1, X=00/80
-;
 ; high     low
 ; 87654321 0ddddddd
 ; ^ends up in MSB
@@ -220,22 +200,72 @@ update_trees:
 ; 2) for PAL subtract 8 for values < 0: so the range is 1E0 .. 1F7 000 .. 16F
 ;    for NTSC don't subtract 8, so the NTSC range is    1E8 .. 1FF 000 .. 16F
 ; see https://bumbershootsoft.wordpress.com/2019/07/01/c64-fat-sprite-workarounds/
-calc_X:
-            cpx #$80    ; copy bit 7 from X into carry so bit 0 from X-coordinate ends in carry
-            rol         ; 7..0, carry contains MSB bit 8
-            ; C=0: pos <= 255; C=1: pos >=256 or negative if >=$E0
-            bcs .check
-            ; C=MSB=0 here
-            rol $FF     ; store MSB somewhere
-            rts
-.check:     ; C=MSB=1 here
-            rol $FF     ; store MSB somewhere
+
+; TODO update $D000 register indices based on prio
+update_sprite_data:
+; update all 8 sprites in IRQ_Top
+            ldy #0
+            sty ZP_MSB
+-           lda Sprites_X_posH,y     ; X-pos bits 8..1
+            sec
+            sbc #12                 ; -24 shifted once
+            ldx Sprites_X_posL,y   ; X-pos bit 0 (in bit 7)
+            cpx #$80                ; copy bit 7 from X into carry
+            rol                     ; 7..0, carry contains MSB bit 8
+            ; C=MSB=0: pos <= 255; C=MSB=1: pos >=256 or negative if >=$E0
+            bcc +
+            ; C=MSB=1 here
+            pha
+            lda ZP_MSB
+            ldx Sprites_prio,y
+            ora MSB,x               ; single bit
+            sta ZP_MSB
+            pla
             ; subtract 8 if A < 0 (only for PAL, don't do this on NTSC, i.e. subtract 0)
             cmp #$E0
             bcc +
             ;sec carry already set
 NTSC_fix1:  sbc #8
-+           rts         ; A = sprite X-position
++           ldx TIMES_5,y
+            sta Crown_X0+1,x        ; SELF MODIFY corresponding lda# statement
+            iny
+            cpy #8
+            bne -
+            lda ZP_MSB
+            sta Crown_X_MSB+1       ; SELF MODIFY corresponding lda# statement
+            ; fall-through
+
+; update the 6 trees in IRQ_Start_trees
+            ldy #0
+            sty ZP_MSB
+-           lda Sprites_X_posH,y     ; X-pos bits 8..1
+            sec
+            sbc #6                     ; -24 shifted once
+            ldx Sprites_X_posL,y     ; X-pos bit 0 (in bit 7)
+            cpx #$80                ; copy bit 7 from X into carry
+            rol                     ; 7..0, carry contains MSB bit 8
+            ; C=MSB=0: pos <= 255; C=MSB=1: pos >=256 or negative if >=$E0
+            bcc +
+            ; C=MSB=1 here
+            pha
+            lda ZP_MSB
+            ldx Sprites_prio,y
+            ora MSB,x               ; single bit
+            sta ZP_MSB
+            pla
+            ; subtract 8 if A < 0 (only for PAL, don't do this on NTSC, i.e. subtract 0)
+            cmp #$E0
+            bcc +
+            ;sec carry already set
+NTSC_fix2:  sbc #8
++           ldx TIMES_5,y
+            sta Tree_X0+1,x        ; SELF MODIFY corresponding lda# statement
+            iny
+            cpy #6
+            bne -
+            lda ZP_MSB
+            sta Tree_X_MSB+1       ; SELF MODIFY corresponding lda# statement
+            rts
 
 
 ; move Spunk based on joystick
@@ -411,20 +441,19 @@ IRQ_Start_trees:
             lda #%00000000
             sta VIC_SPR_DWIDTH
 
-Tree_X0:    lda #<(50+12)
-Tree_P0:    sta $D000       ; X0
-            lda #<(100+12)
-            sta $D002       ; X1
-            lda #<(150+12)
-            sta $D004       ; X2
-            lda #<(200+12)
-            sta $D006       ; X3
-            lda #<(250+12)
-            sta $D008       ; X4
-            lda #<(300+12)
-            sta $D00A       ; X5
-Tree_X_MSB: lda #$30
-            and #$7F ; DEBUG Spunk always 0-255
+Tree_X0:    lda #0          ; SELF-MODIFIED
+Tree_P0:    sta $D000       ; SELF-MODIFIED X0
+            lda #0          ; SELF-MODIFIED
+            sta $D002       ; SELF-MODIFIED X1
+            lda #0          ; SELF-MODIFIED
+            sta $D004       ; SELF-MODIFIED X2
+            lda #0          ; SELF-MODIFIED
+            sta $D006       ; SELF-MODIFIED X3
+            lda #0          ; SELF-MODIFIED
+            sta $D008       ; SELF-MODIFIED X4
+            lda #0          ; SELF-MODIFIED
+            sta $D00A       ; SELF-MODIFIED X5
+Tree_X_MSB: lda #0          ; SELF-MODIFIED
             sta VIC_SPR_X_MSB
             jmp INC_SPRITE_PTRS_END_IRQ
 
@@ -482,6 +511,8 @@ IRQ_Top:
             tya
             pha
 
+            lda #COLOR_SKY
+            sta $D021
             lda #COLOR_CROWN_HIGHLIGHT
             sta VIC_SPR_MC1
             lda #COLOR_CROWN_BRANCHES
@@ -509,38 +540,31 @@ IRQ_Top:
             ldx #PURPLE
             stx VIC_SPR_COL+7 ; SPUNK
 
-            jsr update_trees
-            lda trees+1 ; low
-            sec
-            sbc #$40    ; half pixel
-            sta trees+1 ; update low
-            bcs +       ; no borrow? then ok
-            dec trees
-+
-Crown_X0:   lda #50
-Crown_P0:   sta $D000       ; X0
-            lda #100
-            sta $D002       ; X1
-            lda #150
-            sta $D004       ; X2
-            lda #200
-            sta $D006       ; X3
-            lda #250
-            sta $D008       ; X4
-            lda #<300
-            sta $D00A       ; X5
-            ; enemy
-            lda #30
-            sta $D00C       ; X6
+            jsr update_sprite_data ; TODO is this a good location?
+
+Crown_X0:   lda #0          ; SELF-MODIFIED
+Crown_P0:   sta $D000       ; SELF-MODIFIED X0
+            lda #0          ; SELF-MODIFIED
+            sta $D002       ; SELF-MODIFIED X1
+            lda #0          ; SELF-MODIFIED
+            sta $D004       ; SELF-MODIFIED X2
+            lda #0          ; SELF-MODIFIED
+            sta $D006       ; SELF-MODIFIED X3
+            lda #0          ; SELF-MODIFIED
+            sta $D008       ; SELF-MODIFIED X4
+            lda #0          ; SELF-MODIFIED
+            sta $D00A       ; SELF-MODIFIED X5
+            lda #0          ; SELF-MODIFIED
+            sta $D00C       ; SELF-MODIFIED X6 enemy
+            lda #0          ; SELF-MODIFIED
+            sta $D00E       ; SELF-MODIFIED X7 Spunk
+Crown_X_MSB:lda #0
+            sta VIC_SPR_X_MSB
+
             lda #210
             sta $D00D       ; Y6
-            ; Purple Spunk
-            lda #80
-            sta $D00E       ; X7
 Spunk_Y:    lda #150
             sta $D00F       ; Y7
-Crown_X_MSB:lda #$30
-            sta VIC_SPR_X_MSB
 
             lda #TREETOPY
             sta $D001
@@ -566,9 +590,6 @@ Crown_X_MSB:lda #$30
 Spunk_Ptr:  lda #SPRITE_OFFSET+25
             sta SPRITE_PTR+7
 
-            lda #COLOR_SKY
-            sta $D021
-
             jsr move_Spunk
 
             lda #$FF
@@ -586,6 +607,7 @@ END_IRQ:
             tay
             pla
 NMI:        rti             ; NMI ignored
+
 
 ; set a single VIC register
 Remaining_IRQ_Set_reg:
@@ -637,7 +659,7 @@ Raster_Line:
             !byte 50 + 8*19 ; 202 ; scroll bottom level
             !byte TREETOPY + 42*3 + 40 ; 216
             !byte 50 + 8*22 ; 226 ; scroll plants + all sprites background
-InitRaster: !byte RASTERTOP ; 40
+InitRaster: !byte RASTERTOP ; 30
 
 Raster_IRQ:
             !byte <IRQ_Bump_sprites
@@ -662,7 +684,7 @@ Raster_Data1:
             !byte COLOR_BACKGROUND
             !byte 0
             !byte WHITE
-Spr_Behind: !byte 0;$FF;%00000000 ; no sprites behind characters
+Spr_Behind: !byte $FF;%00000000 ; no sprites behind characters
             !byte %00010000+7
             !byte TREETOPY + 42*3
             !byte %00010000+6
@@ -692,24 +714,32 @@ Raster_Data2:
 ; DATA
 ;----------------------------------------------------------------------------
 
-; X-positions of trees 9.7 (87654321 0ddddddd) range: (left outside view) 0 .. 368 ($B8) (right outside view)
-trees:
-            !byte $B8,0
-            !byte 0,0
-            !byte 0,0
-            !byte 0,0
-            !byte 0,0
-            !byte 0,0
+; Sprite X-positions 9.7 (87654321 0ddddddd) range: (left outside view) 0 .. 368 ($B8) (right outside view)
+Sprites_X_posH:
+            !byte $B8-50,$B8-100,0,0,0,0 ; trees
+            !byte (30+24)/2     ; enemy
+            !byte (80+24)/2     ; Spunk
+Sprites_X_posL:
+            !byte 0,0,0,0,0,0 ; trees
+            !byte 0     ; enemy
+            !byte 0     ; Spunk
+
+; Sprite prio (index into MSB table) NOTE spaced 2 bytes apart
+Sprites_prio:
+            !byte 0,1,2,3,4,5,6,7
+
+; MSBs
+MSB:
+            !byte 1,2,4,8,16,32,64,128
+
+TIMES_5:
+            !byte 0,5,10,15,20,25,30,35
+
 
 ; X-offset of plants 8.8 fixed point .8 is sub-pixels speed, lowest 3 bits is X-scroll, highest 5 is char scroll (mod 11)
 ; increase to scroll left
 plants:
             !byte 0,0
-
-
-; MSBs
-msb:
-            !byte 1,2,4,8,16,32,64,128
 
 
 ;----------------------------------------------------------------------------
@@ -760,7 +790,8 @@ introtext:
 !scr "                                        "
 !scr "          press fire to start           "
 !scr "                                        "
-!scr "      (c)2020 by paaco/twa",129,"n pa",129,"n"
+;!scr"      (c)2020 by paaco/twa",129,"n pa",129,"n"
+!scr "  (c)2020 alexander ",34,"paaco",34," paalvast"
 introtext_end:
 
 ;----------------------------------------------------------------------------
