@@ -230,7 +230,7 @@ NTSC_fix1:  sbc #8
             sta Crown_X0+1,x        ; SELF MODIFY corresponding lda# statement
             lda Sprites_prio,y
             asl
-            sta Crown_P0+1,x        ; SELF MODIFY corresponding sta $D0xx statement
+            sta Crown_XI0+1,x        ; SELF MODIFY corresponding sta $D0xx statement
             ; color
             lda Sprites_colors,y
             sta Crown_C0+1,x        ; SELF MODIFY corresponding lda# statement
@@ -243,6 +243,15 @@ NTSC_fix1:  sbc #8
             bne -
             lda ZP_MSB
             sta Crown_X_MSB+1       ; SELF MODIFY corresponding lda# statement
+; fix y-coordinate indices for actor sprites
+            lda Sprites_prio+6
+            sec
+            rol ; Ax2+1
+            sta Crown_Y6+1          ; SELF MODIFY corresponding sta $D0xx statement
+            lda Sprites_prio+7
+            sec
+            rol ; Ax2+1
+            sta Crown_Y7+1          ; SELF MODIFY corresponding sta $D0xx statement
             ; fall-through
 
 ; update the 6 trees in IRQ_Start_trees
@@ -273,9 +282,14 @@ NTSC_fix2:  sbc #8
             sta Tree_X0+1,x        ; SELF MODIFY corresponding lda# statement
             lda Sprites_prio,y
             asl
-            sta Tree_P0+1,x        ; SELF MODIFY corresponding sta $D0xx statement
-            ; ; color index
+            sta Tree_XI0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
+            ; y-position indices
+            ora #$01               ; +1 for y-coordinate register
             ldx TIMES_3,y
+            sta Crown_Y0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
+            sta Tree_Y0+1,x        ; SELF MODIFY corresponding sta $D0xx statement
+            sta Bump_Y0+1,x        ; SELF MODIFY corresponding sta $D0xx statement
+            ; color index
             lda Sprites_prio,y
             clc
             adc #<VIC_SPR_COL
@@ -426,12 +440,12 @@ IRQ_Bump_sprites:
             pha
             ldy ZP_IRQNUMBER
             lda Raster_Data1,y
-            sta $D001
-            sta $D003
-            sta $D005
-            sta $D007
-            sta $D009
-            sta $D00B
+Bump_Y0:    sta $D000           ; SELF-MODIFIED Y0
+            sta $D000           ; SELF-MODIFIED Y1
+            sta $D000           ; SELF-MODIFIED Y2
+            sta $D000           ; SELF-MODIFIED Y3
+            sta $D000           ; SELF-MODIFIED Y4
+            sta $D000           ; SELF-MODIFIED Y5
 -           cmp $D012 ; wait till after sprite fetch
             bne -
 INC_SPRITE_PTRS_END_IRQ:
@@ -451,18 +465,18 @@ IRQ_Start_trees:
             pha
             ldy ZP_IRQNUMBER
             lda Raster_Data1,y
-            sta $D001
-            sta $D003
-            sta $D005
-            sta $D007
-            sta $D009
-            sta $D00B
+Tree_Y0:    sta $D000           ; SELF-MODIFIED Y0
+            sta $D000           ; SELF-MODIFIED Y1
+            sta $D000           ; SELF-MODIFIED Y2
+            sta $D000           ; SELF-MODIFIED Y3
+            sta $D000           ; SELF-MODIFIED Y4
+            sta $D000           ; SELF-MODIFIED Y5
 
             lda #%00000000
             sta VIC_SPR_DWIDTH
 
 Tree_X0:    lda #0          ; SELF-MODIFIED
-Tree_P0:    sta $D000       ; SELF-MODIFIED X0
+Tree_XI0:   sta $D000       ; SELF-MODIFIED X0
             lda #0          ; SELF-MODIFIED
             sta $D000       ; SELF-MODIFIED X1
             lda #0          ; SELF-MODIFIED
@@ -566,7 +580,7 @@ Crown_CI0:  sta $D000       ; SELF-MODIFIED C0
 
             ; x-positions
 Crown_X0:   lda #0          ; SELF-MODIFIED
-Crown_P0:   sta $D000       ; SELF-MODIFIED X0
+Crown_XI0:  sta $D000       ; SELF-MODIFIED X0
             lda #0          ; SELF-MODIFIED
             sta $D000       ; SELF-MODIFIED X1
             lda #0          ; SELF-MODIFIED
@@ -584,19 +598,19 @@ Crown_P0:   sta $D000       ; SELF-MODIFIED X0
 Crown_X_MSB:lda #0
             sta VIC_SPR_X_MSB
 
-            ; y-positions     TODO SELF-MODIFY
-            lda #210
-            sta $D00D       ; Y6
+            ; y-positions
+Enemy_Y:    lda #210
+Crown_Y6:   sta $D000       ; SELF-MODIFIED Y6
 Spunk_Y:    lda #150
-            sta $D00F       ; Y7
+Crown_Y7:   sta $D000       ; SELF-MODIFIED Y7
 
             lda #TREETOPY
-            sta $D001       ; TODO SELF-MODIFY
-            sta $D003
-            sta $D005
-            sta $D007
-            sta $D009
-            sta $D00B
+Crown_Y0:   sta $D000       ; SELF-MODIFIED Y0
+            sta $D000       ; SELF-MODIFIED Y1
+            sta $D000       ; SELF-MODIFIED Y2
+            sta $D000       ; SELF-MODIFIED Y3
+            sta $D000       ; SELF-MODIFIED Y4
+            sta $D000       ; SELF-MODIFIED Y5
 
             ; pointers      TODO SELF-MODIFY
             lda #SPRITE_OFFSET
@@ -753,18 +767,14 @@ Sprites_X_posL:
 Sprites_colors:
             !byte 8,9,10,11,12,13,14,PURPLE
 
-
 ; Sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 Sprites_prio:
-            !byte 0,1,2,3,4,5,6,7
+            !byte 5,4,3,2,1,0,6,7
 
-; MSBs
 MSB:
             !byte 1,2,4,8,16,32,64,128
-
 TIMES_3:
             !byte 0,3,6,9,12,15,18,21
-
 TIMES_5:
             !byte 0,5,10,15,20,25,30,35
 
