@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 2365 bytes exomized
+; 2408 bytes exomized
 
 ; variables
 !addr {
@@ -24,7 +24,7 @@ VIC_SPR_COL = $D027
 }
 
 ; constants
-RASTERTOP=30            ; top raster irq TODO why not just 0
+RASTERTOP=0             ; top raster irq
 TREETOPY=50             ; first y-position of trees
 ; animation frames
 FRAME_SPUNK_WALK=SPRITE_OFFSET + (sprites_spunk-sprites)/64
@@ -201,7 +201,6 @@ loop:       inc $0404
 ;    for NTSC don't subtract 8, so the NTSC range is    1E8 .. 1FF 000 .. 16F
 ; see https://bumbershootsoft.wordpress.com/2019/07/01/c64-fat-sprite-workarounds/
 
-; TODO update $D000 register indices based on prio
 update_sprite_data:
 ; update all 8 sprites in IRQ_Top
             ldy #0
@@ -227,7 +226,18 @@ update_sprite_data:
             ;sec carry already set
 NTSC_fix1:  sbc #8
 +           ldx TIMES_5,y
+            ; x-position
             sta Crown_X0+1,x        ; SELF MODIFY corresponding lda# statement
+            lda Sprites_prio,y
+            asl
+            sta Crown_P0+1,x        ; SELF MODIFY corresponding sta $D0xx statement
+            ; color
+            lda Sprites_colors,y
+            sta Crown_C0+1,x        ; SELF MODIFY corresponding lda# statement
+            lda Sprites_prio,y
+            clc
+            adc #<VIC_SPR_COL
+            sta Crown_CI0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
             iny
             cpy #8
             bne -
@@ -259,7 +269,17 @@ NTSC_fix1:  sbc #8
             ;sec carry already set
 NTSC_fix2:  sbc #8
 +           ldx TIMES_5,y
+            ; x-position
             sta Tree_X0+1,x        ; SELF MODIFY corresponding lda# statement
+            lda Sprites_prio,y
+            asl
+            sta Tree_P0+1,x        ; SELF MODIFY corresponding sta $D0xx statement
+            ; ; color index
+            ldx TIMES_3,y
+            lda Sprites_prio,y
+            clc
+            adc #<VIC_SPR_COL
+            sta Tree_CI0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
             iny
             cpy #6
             bne -
@@ -444,15 +464,15 @@ IRQ_Start_trees:
 Tree_X0:    lda #0          ; SELF-MODIFIED
 Tree_P0:    sta $D000       ; SELF-MODIFIED X0
             lda #0          ; SELF-MODIFIED
-            sta $D002       ; SELF-MODIFIED X1
+            sta $D000       ; SELF-MODIFIED X1
             lda #0          ; SELF-MODIFIED
-            sta $D004       ; SELF-MODIFIED X2
+            sta $D000       ; SELF-MODIFIED X2
             lda #0          ; SELF-MODIFIED
-            sta $D006       ; SELF-MODIFIED X3
+            sta $D000       ; SELF-MODIFIED X3
             lda #0          ; SELF-MODIFIED
-            sta $D008       ; SELF-MODIFIED X4
+            sta $D000       ; SELF-MODIFIED X4
             lda #0          ; SELF-MODIFIED
-            sta $D00A       ; SELF-MODIFIED X5
+            sta $D000       ; SELF-MODIFIED X5
 Tree_X_MSB: lda #0          ; SELF-MODIFIED
             sta VIC_SPR_X_MSB
             jmp INC_SPRITE_PTRS_END_IRQ
@@ -470,12 +490,12 @@ IRQ_Set_tree_colors:
             tya
             pha
             lda #COLOR_TREES_LIGHT
-            sta VIC_SPR_COL+0
-            sta VIC_SPR_COL+1
-            sta VIC_SPR_COL+2
-            sta VIC_SPR_COL+3
-            sta VIC_SPR_COL+4
-            sta VIC_SPR_COL+5
+Tree_CI0:   sta $D000       ; SELF-MODIFIED C0
+            sta $D000       ; SELF-MODIFIED C1
+            sta $D000       ; SELF-MODIFIED C2
+            sta $D000       ; SELF-MODIFIED C3
+            sta $D000       ; SELF-MODIFIED C4
+            sta $D000       ; SELF-MODIFIED C5
             lda #%00111111
             sta VIC_SPR_DHEIGHT
             jmp END_IRQ
@@ -524,55 +544,61 @@ IRQ_Top:
             sta VIC_SPR_DHEIGHT ; just set all sprites double width even though only 6 are shown
             sta VIC_SPR_BEHIND  ; all sprites behind characters
 
-            ; colors
-            ldx #5
-            stx VIC_SPR_COL+0
-            ;dex
-            stx VIC_SPR_COL+1
-            ldx #2
-            stx VIC_SPR_COL+2
-            ldx #7
-            stx VIC_SPR_COL+3
-            ldx #13
-            stx VIC_SPR_COL+4
-            ;dex
-            stx VIC_SPR_COL+5
-            ldx #PURPLE
-            stx VIC_SPR_COL+7 ; SPUNK
-
             jsr update_sprite_data ; TODO is this a good location?
 
+            ; colors
+Crown_C0:   lda #0          ; SELF-MODIFIED
+Crown_CI0:  sta $D000       ; SELF-MODIFIED C0
+            lda #0          ; SELF-MODIFIED
+            sta $D000       ; SELF-MODIFIED C1
+            lda #0          ; SELF-MODIFIED
+            sta $D000       ; SELF-MODIFIED C2
+            lda #0          ; SELF-MODIFIED
+            sta $D000       ; SELF-MODIFIED C3
+            lda #0          ; SELF-MODIFIED
+            sta $D000       ; SELF-MODIFIED C4
+            lda #0          ; SELF-MODIFIED
+            sta $D000       ; SELF-MODIFIED C5
+            lda #0          ; SELF-MODIFIED
+            sta $D000       ; SELF-MODIFIED C6
+            lda #0          ; SELF-MODIFIED
+            sta $D000       ; SELF-MODIFIED C7
+
+            ; x-positions
 Crown_X0:   lda #0          ; SELF-MODIFIED
 Crown_P0:   sta $D000       ; SELF-MODIFIED X0
             lda #0          ; SELF-MODIFIED
-            sta $D002       ; SELF-MODIFIED X1
+            sta $D000       ; SELF-MODIFIED X1
             lda #0          ; SELF-MODIFIED
-            sta $D004       ; SELF-MODIFIED X2
+            sta $D000       ; SELF-MODIFIED X2
             lda #0          ; SELF-MODIFIED
-            sta $D006       ; SELF-MODIFIED X3
+            sta $D000       ; SELF-MODIFIED X3
             lda #0          ; SELF-MODIFIED
-            sta $D008       ; SELF-MODIFIED X4
+            sta $D000       ; SELF-MODIFIED X4
             lda #0          ; SELF-MODIFIED
-            sta $D00A       ; SELF-MODIFIED X5
+            sta $D000       ; SELF-MODIFIED X5
             lda #0          ; SELF-MODIFIED
-            sta $D00C       ; SELF-MODIFIED X6 enemy
+            sta $D000       ; SELF-MODIFIED X6
             lda #0          ; SELF-MODIFIED
-            sta $D00E       ; SELF-MODIFIED X7 Spunk
+            sta $D000       ; SELF-MODIFIED X7
 Crown_X_MSB:lda #0
             sta VIC_SPR_X_MSB
 
+            ; y-positions     TODO SELF-MODIFY
             lda #210
             sta $D00D       ; Y6
 Spunk_Y:    lda #150
             sta $D00F       ; Y7
 
             lda #TREETOPY
-            sta $D001
+            sta $D001       ; TODO SELF-MODIFY
             sta $D003
             sta $D005
             sta $D007
             sta $D009
             sta $D00B
+
+            ; pointers      TODO SELF-MODIFY
             lda #SPRITE_OFFSET
             sta SPRITE_PTR+0
             lda #SPRITE_OFFSET+5
@@ -659,7 +685,7 @@ Raster_Line:
             !byte 50 + 8*19 ; 202 ; scroll bottom level
             !byte TREETOPY + 42*3 + 40 ; 216
             !byte 50 + 8*22 ; 226 ; scroll plants + all sprites background
-InitRaster: !byte RASTERTOP ; 30
+InitRaster: !byte RASTERTOP ; 0
 
 Raster_IRQ:
             !byte <IRQ_Bump_sprites
@@ -724,13 +750,20 @@ Sprites_X_posL:
             !byte 0     ; enemy
             !byte 0     ; Spunk
 
-; Sprite prio (index into MSB table) NOTE spaced 2 bytes apart
+Sprites_colors:
+            !byte 8,9,10,11,12,13,14,PURPLE
+
+
+; Sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 Sprites_prio:
             !byte 0,1,2,3,4,5,6,7
 
 ; MSBs
 MSB:
             !byte 1,2,4,8,16,32,64,128
+
+TIMES_3:
+            !byte 0,3,6,9,12,15,18,21
 
 TIMES_5:
             !byte 0,5,10,15,20,25,30,35
@@ -785,14 +818,24 @@ logo:
 
 introtext:
 ;     12345678901234567890123456789012345678
+!scr "          press fire to start           "
+!scr "                                        "
+!scr "                                        "
+!scr "    written by alex ",34,"paaco",34," paalvast    "
+!scr "                                        "
+!scr "      (c)2020 twa",129,"n pa",129,"n software      "
+introtext_end:
+
+getreadytext:
+;     12345678901234567890123456789012345678
 !scr "     will spunk outrun his forest       "
 !scr "  friends and grab the most apples?     "
 !scr "                                        "
-!scr "          press fire to start           "
 !scr "                                        "
-;!scr"      (c)2020 by paaco/twa",129,"n pa",129,"n"
-!scr "  (c)2020 alexander ",34,"paaco",34," paalvast"
-introtext_end:
+!scr "              get ready!                "
+!scr "                                        "
+getreadytext_end:
+
 
 ;----------------------------------------------------------------------------
 ; CHARSET
