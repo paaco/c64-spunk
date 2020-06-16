@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 2408 bytes exomized
+; 2396 bytes exomized
 
 ; variables
 !addr {
@@ -238,6 +238,11 @@ NTSC_fix1:  sbc #8
             clc
             adc #<VIC_SPR_COL
             sta Crown_CI0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
+            ; pointer
+            lda Sprites_prio,y
+            clc
+            adc #<SPRITE_PTR
+            sta Crown_P0+1,x        ; SELF MODIFY corresponding sta $07F8 statement
             iny
             cpy #8
             bne -
@@ -252,6 +257,13 @@ NTSC_fix1:  sbc #8
             sec
             rol ; Ax2+1
             sta Crown_Y7+1          ; SELF MODIFY corresponding sta $D0xx statement
+; no double height for actor sprites
+            ldx Sprites_prio+6
+            lda MSB,x
+            ldx Sprites_prio+7
+            ora MSB,x
+            eor #$FF
+            sta Tree_DH+1
             ; fall-through
 
 ; update the 6 trees in IRQ_Start_trees
@@ -294,6 +306,11 @@ NTSC_fix2:  sbc #8
             clc
             adc #<VIC_SPR_COL
             sta Tree_CI0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
+            ; pointer
+            lda Sprites_prio,y
+            clc
+            adc #<SPRITE_PTR
+            sta Bump_P0+1,x        ; SELF MODIFY corresponding sta $07F8 statement
             iny
             cpy #6
             bne -
@@ -449,12 +466,12 @@ Bump_Y0:    sta $D000           ; SELF-MODIFIED Y0
 -           cmp $D012 ; wait till after sprite fetch
             bne -
 INC_SPRITE_PTRS_END_IRQ:
-            inc SPRITE_PTR+0
-            inc SPRITE_PTR+1
-            inc SPRITE_PTR+2
-            inc SPRITE_PTR+3
-            inc SPRITE_PTR+4
-            inc SPRITE_PTR+5
+Bump_P0:    inc SPRITE_PTR      ; SELF-MODIFIED P0
+            inc SPRITE_PTR      ; SELF-MODIFIED P1
+            inc SPRITE_PTR      ; SELF-MODIFIED P2
+            inc SPRITE_PTR      ; SELF-MODIFIED P3
+            inc SPRITE_PTR      ; SELF-MODIFIED P4
+            inc SPRITE_PTR      ; SELF-MODIFIED P5
             jmp END_IRQ
 
 
@@ -510,7 +527,7 @@ Tree_CI0:   sta $D000       ; SELF-MODIFIED C0
             sta $D000       ; SELF-MODIFIED C3
             sta $D000       ; SELF-MODIFIED C4
             sta $D000       ; SELF-MODIFIED C5
-            lda #%00111111
+Tree_DH:    lda #0          ; SELF-MODIFIED
             sta VIC_SPR_DHEIGHT
             jmp END_IRQ
 
@@ -534,7 +551,7 @@ IRQ_Set_x_scroll_2:
             ldy ZP_IRQNUMBER
             lda Raster_Data1,y  ; data
             sta $D016
-            lda #$FF
+            lda #$FF            ; all sprites behind characters
             sta VIC_SPR_BEHIND
             jmp END_IRQ
 
@@ -612,23 +629,23 @@ Crown_Y0:   sta $D000       ; SELF-MODIFIED Y0
             sta $D000       ; SELF-MODIFIED Y4
             sta $D000       ; SELF-MODIFIED Y5
 
-            ; pointers      TODO SELF-MODIFY
+            ; pointers
             lda #SPRITE_OFFSET
-            sta SPRITE_PTR+0
+Crown_P0:   sta SPRITE_PTR  ; SELF-MODIFIED P0
             lda #SPRITE_OFFSET+5
-            sta SPRITE_PTR+1
+            sta SPRITE_PTR  ; SELF-MODIFIED P1
             lda #SPRITE_OFFSET+10
-            sta SPRITE_PTR+2
+            sta SPRITE_PTR  ; SELF-MODIFIED P2
             lda #SPRITE_OFFSET+15
-            sta SPRITE_PTR+3
+            sta SPRITE_PTR  ; SELF-MODIFIED P3
             lda #SPRITE_OFFSET+20
-            sta SPRITE_PTR+4
+            sta SPRITE_PTR  ; SELF-MODIFIED P4
             lda #SPRITE_OFFSET
-            sta SPRITE_PTR+5
+            sta SPRITE_PTR  ; SELF-MODIFIED P5
             lda #SPRITE_OFFSET+25
-            sta SPRITE_PTR+6
+            sta SPRITE_PTR  ; SELF-MODIFIED P6
 Spunk_Ptr:  lda #SPRITE_OFFSET+25
-            sta SPRITE_PTR+7
+            sta SPRITE_PTR  ; SELF-MODIFIED P7
 
             jsr move_Spunk
 
@@ -765,11 +782,11 @@ Sprites_X_posL:
             !byte 0     ; Spunk
 
 Sprites_colors:
-            !byte 8,9,10,11,12,13,14,PURPLE
+            !byte 8,9,10,11,12,13,14,PURPLE ; TODO what are nice tree colors besides GREEN?
 
 ; Sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 Sprites_prio:
-            !byte 5,4,3,2,1,0,6,7
+            !byte 4,3,7,6,5,2,1,0
 
 MSB:
             !byte 1,2,4,8,16,32,64,128
