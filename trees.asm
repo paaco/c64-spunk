@@ -871,7 +871,7 @@ Raster_Data2:
 
 ; Sprite X-positions 9.7 (87654321 0ddddddd) range: (left outside view) 0 .. 368 ($B8) (right outside view)
 Sprites_X_posH:
-            !byte $B8-50,$B8-100,0,0,0,0 ; trees
+            !byte $B8-50,$B8-100,30,60,90,120 ; trees
             !byte (30+24)/2     ; enemy
 Spunk_X:    !byte (80+24)/2     ; Spunk
 Sprites_X_posL:
@@ -879,8 +879,12 @@ Sprites_X_posL:
             !byte 0     ; enemy
             !byte 0     ; Spunk
 
+; acceptable colors are 3,5,7,10,13 CYAN GREEN YELLOW LIGHT_RED LIGHT_GREEN
 Sprites_colors:
-            !byte 8,9,10,11,12,13,14,PURPLE ; TODO what are nice tree colors besides GREEN?
+            !byte 3,5,7,10,13,5,14,PURPLE
+
+; with Spunk placed at Y=150 his last screen line is 121 (sprite line 171)
+; there are 5 trees ending at screen lines: 132, 143, 161, 172, 186
 
 ; Sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 Sprites_prio:
