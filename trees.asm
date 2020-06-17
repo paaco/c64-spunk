@@ -328,12 +328,11 @@ update_sprite_data:
             sta Tree_DH+1
 ; update indices, color and pointer data for the 6 trees
             ldy #0
--           ldx TIMES_5,y
+-           ldx TIMES_3,y
             lda Sprites_prio,y
             sec
             rol ; Ax2+1
             ; y-position indices
-            ldx TIMES_3,y
             sta Crown_Y0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
             sta Tree_Y0+1,x        ; SELF MODIFY corresponding sta $D0xx statement
             sta Bump_Y0+1,x        ; SELF MODIFY corresponding sta $D0xx statement
@@ -889,6 +888,7 @@ Sprites_colors:
 ; Sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 Sprites_prio:
             !byte 4,3,0,6,5,2,1,7
+            ;!byte 0,3,7,6,5,2,1,4 ; TODO somehow this ordering bugs
 
 MSB:
             !byte 1,2,4,8,16,32,64,128
