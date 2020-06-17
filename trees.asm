@@ -1,7 +1,11 @@
 ;
 ; trees
 ;
+<<<<<<< HEAD
 ; 2474 bytes exomized
+=======
+; 2471 bytes exomized
+>>>>>>> 99e8d5f61d26ddd0aee30483640b0cb7b068b0d3
 
 ; variables
 !addr {
@@ -199,7 +203,11 @@ loop:       lda ZP_SYNC
             ; inc plants
 
 loop_handled:
+<<<<<<< HEAD
             jsr draw_plants
+=======
+            ;jsr draw_plants
+>>>>>>> 99e8d5f61d26ddd0aee30483640b0cb7b068b0d3
 
             lda #0
             sta ZP_SYNC
