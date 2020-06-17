@@ -1,12 +1,14 @@
 ;
 ; trees
 ;
-; 2396 bytes exomized
+; 2474 bytes exomized
 
 ; variables
 !addr {
 ZP_IRQNUMBER = $10      ; current raster IRQ
 ZP_MSB = $11            ; temp location for MSB calculation
+ZP_SYNC = $12           ; set <>0 after top raster IRQ for sync
+ZP_GAMESTATE = $13      ; current game state (0=title screen, etc. see main loop)
 
 SPRITE_PTR = $07F8
 
@@ -71,6 +73,7 @@ OK_its_PAL:
             sta $D020
             lda #COLOR_DISTANT
             sta VIC_COL_TXT_MC1
+            sta ZP_SYNC ; set to 0
             lda #COLOR_PLANTS
             sta VIC_COL_TXT_MC2
             lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
@@ -80,61 +83,19 @@ OK_its_PAL:
             sta VIC_SPR_MC
             sta $DC00       ; disconnect keyboard
 
-            ; cls TODO can we shorten this? most is overwritten below anyway
+            ; partial cls and color setup
             ldx #0
 -           lda #$20
             sta $0400,x
-            sta $0500,x
-            sta $0600,x
-            sta $0700,x
             lda #8+COLOR_PLANTS_OUTLINE
-            sta $D800,x
-            sta $D900,x
-            sta $DA00,x
             sta $DB00,x
             inx
             bne -
 
-            ; distant background
-            ldx #0
--           lda distant,x
-            sta $0400+40*2,x
-            lda distant+$100,x
-            sta $0500+40*2,x
-            lda distant+520-256,x
-            sta $0400+520-256+40*2,x
-            inx
-            bne -
-
-            ; logo (360 bytes)
-            HALFLOGO=180
-            LOGOY=1
-            ldx #0
--           lda logo,x
-            bmi +
-            sta $0400+40*LOGOY,x
-            lda #PURPLE
-            sta $D800+40*LOGOY,x
-+           lda logo+HALFLOGO,x
-            bmi +
-            sta $0400+40*LOGOY+HALFLOGO,x
-            lda #WHITE
-            sta $D800+40*LOGOY+HALFLOGO,x
-+           inx
-            cpx #HALFLOGO
-            bne -
-
-            ; introtext
-            INTROTEXTY=16
-            ldx #introtext_end-introtext-1
--           lda introtext,x
-            sta $0400+INTROTEXTY*40,x
-            lda #CYAN
-            sta $D800+INTROTEXTY*40,x
-            dex
-            bne -
-
-            jsr draw_plants
+            ; draw game state 0
+            jsr draw_distant_background
+            jsr draw_logo
+            jsr draw_introtext
 
             sei
 
@@ -181,9 +142,68 @@ OK_its_PAL:
 
             cli
 
-            ; TODO sync the main loop to the raster IRQ
-loop:       inc $0404
+
+;-----------
+; main loop
+;-----------
+
+            ; main loop in synced after IRQ_Top and runs in upper portion of the screen
+            ; it scrolls stuff and handles joystick and gameplay
+loop:       lda ZP_SYNC
+            beq loop
+            sta $D020               ; DEBUG
+
+            lda ZP_GAMESTATE
+            bne +
+
+        ; game_state 0 : title screen
+
+            ; wait for fire
+            lda $DC00           ; Joystick A in control port 2 0=active: 1=up 2=down 4=left 8=right 16=fire
+            and $DC01           ; Joystick B in control port 1 0=active: 1=up 2=down 4=left 8=right 16=fire
+            and #%00010000      ; ignore other bits not from the joystick
+            bne loop_handled
+
+            jsr draw_distant_background
+            jsr draw_getreadytext
+            inc ZP_GAMESTATE
+            jmp loop_handled
+
++           cmp #1
+            bne +
+
+        ; game_state 1 : get ready
+
+            ; TODO wait a few seconds
+            ; TODO setup initial game state
+            inc ZP_GAMESTATE
+            jmp loop_handled
+
++           cmp #2
+            bne loop_handled
+
+        ; game_state 2 : game play
+
+            ; TODO handle game states:
+            ; TODO 3.game over -> 4
+
+            ; TODO scroll objects here
+            jsr move_Spunk
+
+            ; TODO DEBUG move plant movement elsewhere
+            ; lda plants+1
+            ; clc
+            ; adc #$80
+            ; sta plants+1
+            ; bcc +           ; no borrow? then ok
+            ; inc plants
+
+loop_handled:
             jsr draw_plants
+
+            lda #0
+            sta ZP_SYNC
+            sta $D020               ; DEBUG
             jmp loop
 
 
@@ -201,14 +221,14 @@ loop:       inc $0404
 ;    for NTSC don't subtract 8, so the NTSC range is    1E8 .. 1FF 000 .. 16F
 ; see https://bumbershootsoft.wordpress.com/2019/07/01/c64-fat-sprite-workarounds/
 
-update_sprite_data:
+update_sprite_X:
 ; update all 8 sprites in IRQ_Top
             ldy #0
             sty ZP_MSB
--           lda Sprites_X_posH,y     ; X-pos bits 8..1
+-           lda Sprites_X_posH,y    ; X-pos bits 8..1
             sec
             sbc #12                 ; -24 shifted once
-            ldx Sprites_X_posL,y   ; X-pos bit 0 (in bit 7)
+            ldx Sprites_X_posL,y    ; X-pos bit 0 (in bit 7)
             cpx #$80                ; copy bit 7 from X into carry
             rol                     ; 7..0, carry contains MSB bit 8
             ; C=MSB=0: pos <= 255; C=MSB=1: pos >=256 or negative if >=$E0
@@ -230,49 +250,19 @@ NTSC_fix1:  sbc #8
             sta Crown_X0+1,x        ; SELF MODIFY corresponding lda# statement
             lda Sprites_prio,y
             asl
-            sta Crown_XI0+1,x        ; SELF MODIFY corresponding sta $D0xx statement
-            ; color
-            lda Sprites_colors,y
-            sta Crown_C0+1,x        ; SELF MODIFY corresponding lda# statement
-            lda Sprites_prio,y
-            clc
-            adc #<VIC_SPR_COL
-            sta Crown_CI0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
-            ; pointer
-            lda Sprites_prio,y
-            clc
-            adc #<SPRITE_PTR
-            sta Crown_P0+1,x        ; SELF MODIFY corresponding sta $07F8 statement
+            sta Crown_XI0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
             iny
             cpy #8
             bne -
             lda ZP_MSB
             sta Crown_X_MSB+1       ; SELF MODIFY corresponding lda# statement
-; fix y-coordinate indices for actor sprites
-            lda Sprites_prio+6
-            sec
-            rol ; Ax2+1
-            sta Crown_Y6+1          ; SELF MODIFY corresponding sta $D0xx statement
-            lda Sprites_prio+7
-            sec
-            rol ; Ax2+1
-            sta Crown_Y7+1          ; SELF MODIFY corresponding sta $D0xx statement
-; no double height for actor sprites
-            ldx Sprites_prio+6
-            lda MSB,x
-            ldx Sprites_prio+7
-            ora MSB,x
-            eor #$FF
-            sta Tree_DH+1
-            ; fall-through
-
 ; update the 6 trees in IRQ_Start_trees
             ldy #0
             sty ZP_MSB
--           lda Sprites_X_posH,y     ; X-pos bits 8..1
+-           lda Sprites_X_posH,y    ; X-pos bits 8..1
             sec
-            sbc #6                     ; -24 shifted once
-            ldx Sprites_X_posL,y     ; X-pos bit 0 (in bit 7)
+            sbc #6                  ; -12 shifted once
+            ldx Sprites_X_posL,y    ; X-pos bit 0 (in bit 7)
             cpx #$80                ; copy bit 7 from X into carry
             rol                     ; 7..0, carry contains MSB bit 8
             ; C=MSB=0: pos <= 255; C=MSB=1: pos >=256 or negative if >=$E0
@@ -295,8 +285,54 @@ NTSC_fix2:  sbc #8
             lda Sprites_prio,y
             asl
             sta Tree_XI0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
+            iny
+            cpy #6
+            bne -
+            lda ZP_MSB
+            sta Tree_X_MSB+1       ; SELF MODIFY corresponding lda# statement
+            rts
+
+
+update_sprite_data:
+; update color and pointer data for all 8 sprites
+            ldy #0
+-           ldx TIMES_5,y
+            ; color
+            lda Sprites_colors,y
+            sta Crown_C0+1,x        ; SELF MODIFY corresponding lda# statement
+            lda Sprites_prio,y
+            clc
+            adc #<VIC_SPR_COL
+            sta Crown_CI0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
+            ; pointer
+            adc #<SPRITE_PTR-VIC_SPR_COL
+            sta Crown_P0+1,x        ; SELF MODIFY corresponding sta $07F8 statement
+            iny
+            cpy #8
+            bne -
+; fix y-position indices for actor sprites
+            lda Sprites_prio+6
+            sec
+            rol ; Ax2+1
+            sta Crown_Y6+1          ; SELF MODIFY corresponding sta $D0xx statement
+            lda Sprites_prio+7
+            sec
+            rol ; Ax2+1
+            sta Crown_Y7+1          ; SELF MODIFY corresponding sta $D0xx statement
+; set double height; disable for actor sprites
+            ldx Sprites_prio+6
+            lda MSB,x
+            ldx Sprites_prio+7
+            ora MSB,x
+            eor #$FF
+            sta Tree_DH+1
+; update indices, color and pointer data for the 6 trees
+            ldy #0
+-           ldx TIMES_5,y
+            lda Sprites_prio,y
+            sec
+            rol ; Ax2+1
             ; y-position indices
-            ora #$01               ; +1 for y-coordinate register
             ldx TIMES_3,y
             sta Crown_Y0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
             sta Tree_Y0+1,x        ; SELF MODIFY corresponding sta $D0xx statement
@@ -307,15 +343,11 @@ NTSC_fix2:  sbc #8
             adc #<VIC_SPR_COL
             sta Tree_CI0+1,x       ; SELF MODIFY corresponding sta $D0xx statement
             ; pointer
-            lda Sprites_prio,y
-            clc
-            adc #<SPRITE_PTR
+            adc #<SPRITE_PTR-VIC_SPR_COL
             sta Bump_P0+1,x        ; SELF MODIFY corresponding sta $07F8 statement
             iny
             cpy #6
             bne -
-            lda ZP_MSB
-            sta Tree_X_MSB+1       ; SELF MODIFY corresponding lda# statement
             rts
 
 
@@ -346,6 +378,11 @@ move_Spunk:
             bcc .ok2
             lda #220
 .ok2:       sta Spunk_Y+1
++           tya
+            and #$10
+            bne +
+            ; FIRE
+            inc Spunk_X ; DEBUG
 +           cpy #%00011111
             bne .animate
             ; reset anim frame
@@ -366,26 +403,18 @@ move_Spunk:
 
 delay:      !byte 0
 
+
 ;-------------------
 ; handle background
 ;-------------------
 
 ; draw plants row (full redraw takes as long as scrolling and updating)
 draw_plants:
-            ; TODO DEBUG move plant movement elsewhere
-            lda plants+1
-            clc
-            adc #$16
-            sta plants+1
-            bcc +           ; no borrow? then ok
-            inc plants
-+
             lda plants
             and #$07        ; X-scroll
             eor #$07        ; reverse
             ora #%00010000  ; Text MC + 38 columns
             sta Plants_X
-
             lda plants
             cmp #8*11
             bcc +           ; borrow? then smaller thus ok
@@ -394,9 +423,7 @@ draw_plants:
 +           lsr
             lsr
             lsr
-            tax             ; initial offset (0..10)
-
-            ; X=initial offset (0..10)
+            tax             ; X=initial offset (0..10)
             clc
             ldy #0
 -           txa
@@ -412,6 +439,73 @@ draw_plants:
             ldx #0
 +           iny
             cpy #40
+            bne -
+            rts
+
+
+; distant trees in the background
+draw_distant_background:
+            ldx #0
+            lda #$20
+-           sta $0400+40,x
+            inx
+            cpx #40
+            bne -
+            ldx #0
+-           lda distant,x
+            sta $0400+40*2,x
+            lda distant+$100,x
+            sta $0500+40*2,x
+            lda distant+520-256,x
+            sta $0400+520-256+40*2,x
+            lda #8 ; only the MC part matters
+            sta $D800+40*2,x
+            sta $D900+40*2,x
+            sta $D800+520-256+40*2,x
+            inx
+            bne -
+            rts
+
+; logo (360 bytes) overwrites distant trees
+draw_logo:
+            HALFLOGO=180
+            LOGOY=1
+            ldx #0
+-           lda logo,x
+            bmi +
+            sta $0400+40*LOGOY,x
+            lda #PURPLE
+            sta $D800+40*LOGOY,x
++           lda logo+HALFLOGO,x
+            bmi +
+            sta $0400+40*LOGOY+HALFLOGO,x
+            lda #WHITE
+            sta $D800+40*LOGOY+HALFLOGO,x
++           inx
+            cpx #HALFLOGO
+            bne -
+            rts
+
+; introtext
+draw_introtext:
+            INTROTEXTY=16
+            ldx #introtext_end-introtext-1
+-           lda introtext,x
+            sta $0400+INTROTEXTY*40,x
+            lda #CYAN
+            sta $D800+INTROTEXTY*40,x
+            dex
+            bne -
+            rts
+
+; getreadytext
+draw_getreadytext:
+            ldx #getreadytext_end-getreadytext-1
+-           lda getreadytext,x
+            sta $0400+INTROTEXTY*40,x
+            lda #CYAN
+            sta $D800+INTROTEXTY*40,x
+            dex
             bne -
             rts
 
@@ -575,7 +669,12 @@ IRQ_Top:
             sta VIC_SPR_DHEIGHT ; just set all sprites double width even though only 6 are shown
             sta VIC_SPR_BEHIND  ; all sprites behind characters
 
-            jsr update_sprite_data ; TODO is this a good location?
+            txa
+            pha
+            jsr update_sprite_X
+            jsr update_sprite_data ; TODO this is only required when Y positions/prio changes
+            pla
+            tax
 
             ; colors
 Crown_C0:   lda #0          ; SELF-MODIFIED
@@ -642,15 +741,14 @@ Crown_P0:   sta SPRITE_PTR  ; SELF-MODIFIED P0
             sta SPRITE_PTR  ; SELF-MODIFIED P4
             lda #SPRITE_OFFSET
             sta SPRITE_PTR  ; SELF-MODIFIED P5
-            lda #SPRITE_OFFSET+25
+Enemy_Ptr:  lda #SPRITE_OFFSET+25
             sta SPRITE_PTR  ; SELF-MODIFIED P6
 Spunk_Ptr:  lda #SPRITE_OFFSET+25
             sta SPRITE_PTR  ; SELF-MODIFIED P7
 
-            jsr move_Spunk
-
             lda #$FF
             sta ZP_IRQNUMBER
+            sta ZP_SYNC
 END_IRQ:
             inc ZP_IRQNUMBER
             ldy ZP_IRQNUMBER
@@ -775,7 +873,7 @@ Raster_Data2:
 Sprites_X_posH:
             !byte $B8-50,$B8-100,0,0,0,0 ; trees
             !byte (30+24)/2     ; enemy
-            !byte (80+24)/2     ; Spunk
+Spunk_X:    !byte (80+24)/2     ; Spunk
 Sprites_X_posL:
             !byte 0,0,0,0,0,0 ; trees
             !byte 0     ; enemy
@@ -786,7 +884,7 @@ Sprites_colors:
 
 ; Sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 Sprites_prio:
-            !byte 4,3,7,6,5,2,1,0
+            !byte 4,3,0,6,5,2,1,7
 
 MSB:
             !byte 1,2,4,8,16,32,64,128
