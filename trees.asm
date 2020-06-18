@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 2474 bytes exomized
+; 2522 bytes exomized
 
 ; variables
 !addr {
@@ -82,6 +82,7 @@ OK_its_PAL:
             sta VIC_SPR_ENA
             sta VIC_SPR_MC
             sta $DC00       ; disconnect keyboard
+            sta ZP_GAMESTATE ; set to $FF
 
             ; partial cls and color setup
             ldx #0
@@ -91,11 +92,6 @@ OK_its_PAL:
             sta $DB00,x
             inx
             bne -
-
-            ; draw game state 0
-            jsr draw_distant_background
-            jsr draw_logo
-            jsr draw_introtext
 
             sei
 
@@ -142,6 +138,8 @@ OK_its_PAL:
 
             cli
 
+            jmp init_state_0_title_screen
+
 
 ;-----------
 ; main loop
@@ -157,54 +155,78 @@ loop:       lda ZP_SYNC
             bne +
 
         ; game_state 0 : title screen
-
             ; wait for fire
             lda $DC00           ; Joystick A in control port 2 0=active: 1=up 2=down 4=left 8=right 16=fire
             and $DC01           ; Joystick B in control port 1 0=active: 1=up 2=down 4=left 8=right 16=fire
             and #%00010000      ; ignore other bits not from the joystick
-            bne loop_handled
-
-            jsr draw_distant_background
-            jsr draw_getreadytext
-            inc ZP_GAMESTATE
-            jmp loop_handled
+            bne state_handled
+            jmp init_state_1_get_ready
 
 +           cmp #1
             bne +
 
         ; game_state 1 : get ready
-
-            ; TODO wait a few seconds
-            ; TODO setup initial game state
-            inc ZP_GAMESTATE
-            jmp loop_handled
+            ; wait a few seconds
+            dec getready
+            bne state_handled
+            jmp init_state_2_game_play
 
 +           cmp #2
-            bne loop_handled
+            bne state_handled
 
         ; game_state 2 : game play
-
             ; TODO handle game states:
             ; TODO 3.game over -> 4
-
             ; TODO scroll objects here
             jsr move_Spunk
-
             ; TODO DEBUG move plant movement elsewhere
             ; lda plants+1
             ; clc
             ; adc #$80
             ; sta plants+1
             ; bcc +           ; no borrow? then ok
-            ; inc plants
+            inc plants
+            ; fall-through
 
-loop_handled:
+state_handled:
             jsr draw_plants
 
             lda #0
             sta ZP_SYNC
             sta $D020               ; DEBUG
             jmp loop
+
+
+init_state_0_title_screen:
+            lda #%00010000  ; Text MC + 38 columns + X-scroll 0
+            sta Scroll1
+            sta Scroll2
+            sta Scroll3
+            lda #%11111111 ; sprites behind text
+            sta Spr_Behind
+            ; TODO setup sprites?
+            jsr draw_distant_background
+            jsr draw_logo
+            jsr draw_introtext
+next_state: inc ZP_GAMESTATE
+            jmp state_handled
+
+init_state_1_get_ready:
+            ; TODO setup possible sprites and scroll values
+            jsr draw_distant_background
+            jsr draw_getreadytext
+            lda #100
+            sta getready
+            jmp next_state
+
+init_state_2_game_play:
+            ; TODO
+            lda #0 ; sprites before characters (obstacles)
+            sta Spr_Behind
+            jsr draw_notext
+            jmp next_state
+
+getready:   !byte 0
 
 
 ;----------------
@@ -413,7 +435,7 @@ draw_plants:
             and #$07        ; X-scroll
             eor #$07        ; reverse
             ora #%00010000  ; Text MC + 38 columns
-            sta Plants_X
+            sta Scroll4
             lda plants
             cmp #8*11
             bcc +           ; borrow? then smaller thus ok
@@ -505,6 +527,15 @@ draw_getreadytext:
             lda #CYAN
             sta $D800+INTROTEXTY*40,x
             dex
+            bne -
+            rts
+
+; notext
+draw_notext:
+            ldx #0
+            lda #$20
+-           sta $0400+INTROTEXTY*40,x
+            inx
             bne -
             rts
 
@@ -806,13 +837,13 @@ Raster_Line:
             !byte 50 + 8*11 - 1 ; 137 (-1 to avoid flickering)
             !byte 50 + 8*11 + 2 ; 139 fix COL
             !byte 50 + 8*11 + 5 ; 143 fix MC2
-            !byte 50 + 8*12 ; 146 set sprites background/front
+            !byte 50 + 8*12 ; 146 set sprites before/behind
             !byte 50 + 8*15 ; 170 ; scroll top level
             !byte TREETOPY + 42*2 + 40 ; 174
             !byte 50 + 8*17 ; 186 ; scroll mid level
             !byte 50 + 8*19 ; 202 ; scroll bottom level
             !byte TREETOPY + 42*3 + 40 ; 216
-            !byte 50 + 8*22 ; 226 ; scroll plants + all sprites background
+            !byte 50 + 8*22 ; 226 ; scroll plants + all sprites behind
 InitRaster: !byte RASTERTOP ; 0
 
 Raster_IRQ:
@@ -838,13 +869,13 @@ Raster_Data1:
             !byte COLOR_BACKGROUND
             !byte 0
             !byte WHITE
-Spr_Behind: !byte $FF;%00000000 ; no sprites behind characters
-            !byte %00010000+7
+Spr_Behind: !byte %00000000 ; sprites before/behind chars in playfield
+Scroll1:    !byte %00010000
             !byte TREETOPY + 42*3
-            !byte %00010000+6
-            !byte %00010000+5
+Scroll2:    !byte %00010000
+Scroll3:    !byte %00010000
             !byte TREETOPY + 42*4
-Plants_X:   !byte %00010000+4
+Scroll4:    !byte %00010000
             !byte 0
 
 Raster_Data2:
@@ -892,7 +923,7 @@ Sprites_prio:
 MSB:
             !byte 1,2,4,8,16,32,64,128
 TIMES_3:
-            !byte 0,3,6,9,12,15,18,21
+            !byte 0,3,6,9,12,15 ; note only 6 entries
 TIMES_5:
             !byte 0,5,10,15,20,25,30,35
 
@@ -945,22 +976,22 @@ logo:
 !byte $80,$80,$80,$80,$80, 20,  8,  5,$80, 16, 21, 18, 16, 12,  5,$80, 19, 11, 21, 14, 11,$80, 22, 46, 19, 46,$80, 20,  8,  5,$80, 18,  5, 19, 20,$80,$80,$80,$80,$80
 
 introtext:
-;     12345678901234567890123456789012345678
-!scr "          press fire to start           "
+;      12345678901234567890123456789012345678
+!scr "          press fire to start!          "
 !scr "                                        "
 !scr "                                        "
 !scr "    written by alex ",34,"paaco",34," paalvast    "
 !scr "                                        "
-!scr "      (c)2020 twa",129,"n pa",129,"n software      "
+!scr "      (c) 2020 twa",129,"n pa",129,"n software     "
 introtext_end:
 
 getreadytext:
-;     12345678901234567890123456789012345678
-!scr "     will spunk outrun his forest       "
-!scr "  friends and grab the most apples?     "
+;      12345678901234567890123456789012345678
+!scr " will spunk beat his friends again      "
+!scr " and grab the most apples?              "
 !scr "                                        "
 !scr "                                        "
-!scr "              get ready!                "
+!scr "         get ready for spunk!           "
 !scr "                                        "
 getreadytext_end:
 
