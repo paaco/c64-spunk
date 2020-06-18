@@ -806,7 +806,7 @@ Raster_Line:
             !byte 50 + 8*11 - 1 ; 137 (-1 to avoid flickering)
             !byte 50 + 8*11 + 2 ; 139 fix COL
             !byte 50 + 8*11 + 5 ; 143 fix MC2
-            !byte 50 + 8*11 + 7 ; 146 set sprites background/front
+            !byte 50 + 8*12 ; 146 set sprites background/front
             !byte 50 + 8*15 ; 170 ; scroll top level
             !byte TREETOPY + 42*2 + 40 ; 174
             !byte 50 + 8*17 ; 186 ; scroll mid level
@@ -888,7 +888,6 @@ Sprites_colors:
 ; Sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 Sprites_prio:
             !byte 4,3,0,6,5,2,1,7
-            ;!byte 0,3,7,6,5,2,1,4 ; TODO somehow this ordering bugs
 
 MSB:
             !byte 1,2,4,8,16,32,64,128
