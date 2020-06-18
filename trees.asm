@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 2522 bytes exomized
+; 2568 bytes exomized
 
 ; variables
 !addr {
@@ -9,6 +9,8 @@ ZP_IRQNUMBER = $10      ; current raster IRQ
 ZP_MSB = $11            ; temp location for MSB calculation
 ZP_SYNC = $12           ; set <>0 after top raster IRQ for sync
 ZP_GAMESTATE = $13      ; current game state (0=title screen, etc. see main loop)
+rng_zp_low = $02
+rng_zp_high = $03
 
 SPRITE_PTR = $07F8
 
@@ -32,20 +34,13 @@ TREETOPY=50             ; first y-position of trees
 FRAME_SPUNK_WALK=SPRITE_OFFSET + (sprites_spunk-sprites)/64
 FRAME_SPUNK_JUMP=FRAME_SPUNK_WALK+3
 
-BLACK=0
-WHITE=1
-CYAN=3
-PURPLE=4
-GREEN=5
-BLUE=6
-YELLOW=7
-ORANGE=8
-BROWN=9
-LIGHT_GREEN=13
-LIGHT_BLUE=14
+BLACK=0 : WHITE=1 : RED=2 : CYAN=3
+PURPLE=4 : GREEN=5 : BLUE=6 : YELLOW=7
+ORANGE=8 : BROWN=9 : LIGHT_RED=10 : DARK_GREY=11
+GREY=12 : LIGHT_GREEN=13 : LIGHT_BLUE=14 : LIGHT_GREY=15
 
-COLOR_BORDER = BLACK
-COLOR_SKY = LIGHT_BLUE
+COLOR_BORDER = LIGHT_BLUE
+COLOR_SKY = BLUE
 COLOR_DISTANT = BLACK
 COLOR_BACKGROUND = BROWN
 COLOR_PLANTS = GREEN
@@ -74,6 +69,7 @@ OK_its_PAL:
             lda #COLOR_DISTANT
             sta VIC_COL_TXT_MC1
             sta ZP_SYNC ; set to 0
+            sta rng_zp_high ; set to 0
             lda #COLOR_PLANTS
             sta VIC_COL_TXT_MC2
             lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
@@ -126,6 +122,8 @@ OK_its_PAL:
             lda #$FF        ; ACK IRQs
             sta $D019
 
+            lda $D012
+            sta rng_zp_low ; seed, can be anything except 0
             lda InitRaster  ; raster line to trigger
             sta $D012
             lda #%00011000+3  ; set bit 9 of raster line to 0 + Y-scroll
@@ -149,7 +147,7 @@ OK_its_PAL:
             ; it scrolls stuff and handles joystick and gameplay
 loop:       lda ZP_SYNC
             beq loop
-            sta $D020               ; DEBUG
+            ;sta $D020               ; DEBUG
 
             lda ZP_GAMESTATE
             bne +
@@ -193,7 +191,7 @@ state_handled:
 
             lda #0
             sta ZP_SYNC
-            sta $D020               ; DEBUG
+            ;sta $D020               ; DEBUG
             jmp loop
 
 
@@ -204,7 +202,12 @@ init_state_0_title_screen:
             sta Scroll3
             lda #%11111111 ; sprites behind text
             sta Spr_Behind
-            ; TODO setup sprites?
+            ldx #0
+-           lda INIT_SPRITES_DATA,x
+            sta SPRITES_DATA,x
+            inx
+            cpx #END_SPRITES_DATA-INIT_SPRITES_DATA
+            bne -
             jsr draw_distant_background
             jsr draw_logo
             jsr draw_introtext
@@ -280,7 +283,13 @@ NTSC_fix1:  sbc #8
             sta Crown_X_MSB+1       ; SELF MODIFY corresponding lda# statement
 ; update the 6 trees in IRQ_Start_trees
             ldy #0
-            sty ZP_MSB
+            ; keep 2 bits from actor sprites in ZP_MSB calculated before
+            ldx Sprites_prio+6
+            lda MSB,x
+            ldx Sprites_prio+7
+            ora MSB,x
+            and ZP_MSB
+            sta ZP_MSB
 -           lda Sprites_X_posH,y    ; X-pos bits 8..1
             sec
             sbc #6                  ; -12 shifted once
@@ -329,6 +338,8 @@ update_sprite_data:
             ; pointer
             adc #<SPRITE_PTR-VIC_SPR_COL
             sta Crown_P0+1,x        ; SELF MODIFY corresponding sta $07F8 statement
+            lda Sprites_ptrs,y
+            sta Crown_F0+1,x
             iny
             cpy #8
             bne -
@@ -413,13 +424,13 @@ move_Spunk:
 .animate:   dec delay
             bpl .ok3
             lda #4  ; delay
-            ldx Spunk_Ptr+1
+            ldx Spunk_Ptr
             inx
             cpx #FRAME_SPUNK_JUMP
             bne .anim_ok
             ldx #FRAME_SPUNK_WALK
 .anim_ok:   sta delay
-            stx Spunk_Ptr+1
+            stx Spunk_Ptr
 .ok3:       rts
 
 delay:      !byte 0
@@ -545,16 +556,10 @@ draw_notext:
 ;------
 
 ; RANDOM routine from https://codebase64.org/doku.php?id=base:16bit_xorshift_random_generator
-rng_zp_low = $02
-rng_zp_high = $03
-        ; seeding
-        LDA #1 ; seed, can be anything except 0
-        STA rng_zp_low
-        LDA #0
-        STA rng_zp_high
-        ; the RNG. You can get 8-bit random numbers in A or 16-bit numbers
-        ; from the zero page addresses. Leaves X/Y unchanged.
-random  LDA rng_zp_high
+; the RNG. You can get 8-bit random numbers in A or 16-bit numbers
+; from the zero page addresses. Leaves X/Y unchanged.
+random:
+        LDA rng_zp_high
         LSR
         LDA rng_zp_low
         ROR
@@ -759,21 +764,21 @@ Crown_Y0:   sta $D000       ; SELF-MODIFIED Y0
             sta $D000       ; SELF-MODIFIED Y5
 
             ; pointers
-            lda #SPRITE_OFFSET
+Crown_F0:   lda #0          ; SELF-MODIFIED
 Crown_P0:   sta SPRITE_PTR  ; SELF-MODIFIED P0
-            lda #SPRITE_OFFSET+5
+            lda #0          ; SELF-MODIFIED
             sta SPRITE_PTR  ; SELF-MODIFIED P1
-            lda #SPRITE_OFFSET+10
+            lda #0          ; SELF-MODIFIED
             sta SPRITE_PTR  ; SELF-MODIFIED P2
-            lda #SPRITE_OFFSET+15
+            lda #0          ; SELF-MODIFIED
             sta SPRITE_PTR  ; SELF-MODIFIED P3
-            lda #SPRITE_OFFSET+20
+            lda #0          ; SELF-MODIFIED
             sta SPRITE_PTR  ; SELF-MODIFIED P4
-            lda #SPRITE_OFFSET
+            lda #0          ; SELF-MODIFIED
             sta SPRITE_PTR  ; SELF-MODIFIED P5
-Enemy_Ptr:  lda #SPRITE_OFFSET+25
+            lda #0          ; SELF-MODIFIED
             sta SPRITE_PTR  ; SELF-MODIFIED P6
-Spunk_Ptr:  lda #SPRITE_OFFSET+25
+            lda #0          ; SELF-MODIFIED
             sta SPRITE_PTR  ; SELF-MODIFIED P7
 
             lda #$FF
@@ -899,26 +904,36 @@ Raster_Data2:
 ; DATA
 ;----------------------------------------------------------------------------
 
+SPRITES_DATA:
 ; Sprite X-positions 9.7 (87654321 0ddddddd) range: (left outside view) 0 .. 368 ($B8) (right outside view)
 Sprites_X_posH:
-            !byte $B8-50,$B8-100,30,60,90,120 ; trees
-            !byte (30+24)/2     ; enemy
-Spunk_X:    !byte (80+24)/2     ; Spunk
+            !byte 0,0,0,0,0,0 ; trees
+            !byte 0 ; enemy
+Spunk_X:    !byte 0 ; Spunk
 Sprites_X_posL:
             !byte 0,0,0,0,0,0 ; trees
-            !byte 0     ; enemy
-            !byte 0     ; Spunk
+            !byte 0 ; enemy
+            !byte 0 ; Spunk
 
-; acceptable colors are 3,5,7,10,13 CYAN GREEN YELLOW LIGHT_RED LIGHT_GREEN
+Sprites_Y_pos:
+            !byte 0,0,0,0,0,0 ; trees
+            !byte 0 ; enemy
+            !byte 0 ; Spunk
+
 Sprites_colors:
-            !byte 3,5,7,10,13,5,14,PURPLE
+            !byte 0,0,0,0,0,0 ; trees
+            !byte 0 ; enemy
+            !byte 0 ; Spunk
 
-; with Spunk placed at Y=150 his last screen line is 121 (sprite line 171)
-; there are 5 trees ending at screen lines: 132, 143, 161, 172, 186
+Sprites_ptrs:
+            !byte 0,0,0,0,0,0
+Enemy_Ptr:  !byte 0
+Spunk_Ptr:  !byte 0
+
 
 ; Sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 Sprites_prio:
-            !byte 4,3,0,6,5,2,1,7
+            !byte 0,7,1,2,3,4,5,6
 
 MSB:
             !byte 1,2,4,8,16,32,64,128
@@ -926,6 +941,34 @@ TIMES_3:
             !byte 0,3,6,9,12,15 ; note only 6 entries
 TIMES_5:
             !byte 0,5,10,15,20,25,30,35
+TREE_COLORS: ; 8 "different" colors to choose at random from
+            !byte CYAN,GREEN,YELLOW,LIGHT_GREEN,LIGHT_RED,GREEN,GREEN,GREEN
+
+; overwrites Sprites_X_posH, Sprites_X_posL, Sprites_Y_pos, Sprites_colors, Sprites_ptrs
+INIT_SPRITES_DATA:
+            !byte $9F,$90,0,0,0,0, 12,12 ; 8x X_posH
+            !fill 8,0 ; 8x X_posL
+            !fill 8,0 ; 8x Y_pos
+            !byte LIGHT_RED,GREEN,0,0,0,0, 0,PURPLE ; colors
+            !byte SPRITE_OFFSET,SPRITE_OFFSET+20,0,0,0,0,0,FRAME_SPUNK_WALK
+END_SPRITES_DATA:
+
+; 8 tree templates consisting of ptr, max-Y and speed-index (corresponding with level 1 2 or 3)
+; To make randomized choosing easier, there are some duplicates
+; Tree sprites are stored from longest tree to smallest
+TEMPLATES_PTR:
+            !byte SPRITE_OFFSET, SPRITE_OFFSET+5, SPRITE_OFFSET+10, SPRITE_OFFSET+15, SPRITE_OFFSET+20
+            !byte SPRITE_OFFSET+5, SPRITE_OFFSET+10, SPRITE_OFFSET+15
+
+; with Spunk placed at Y=150 his last screen line is 121 (sprite line 171)
+; There are 5 trees ending at screen lines: 132, 143, 161, 172, 186
+TEMPLATES_Y:
+            !byte 186, 172, 161, 143, 132
+            !byte 172, 161, 143
+
+TEMPLATES_SPEED:
+            !byte 4,3,3,2,1
+            !byte 3,3,2
 
 
 ; X-offset of plants 8.8 fixed point .8 is sub-pixels speed, lowest 3 bits is X-scroll, highest 5 is char scroll (mod 11)
@@ -987,9 +1030,9 @@ introtext_end:
 
 getreadytext:
 ;      12345678901234567890123456789012345678
-!scr " will spunk beat his friends again      "
-!scr " and grab the most apples?              "
 !scr "                                        "
+!scr "   will spunk beat his friends          "
+!scr "   again and grab the most apples?      "
 !scr "                                        "
 !scr "         get ready for spunk!           "
 !scr "                                        "
