@@ -35,40 +35,67 @@
 !byte $14,$54,$14,$54,$15,$55,$15,$55
 !byte $55,$15,$55,$44,$00,$00,$00,$00
 !byte $55,$54,$10,$40,$00,$00,$00,$00
-; Sprite2asm trees-plants-ch00-mcf5.png 14 mei 2020 21:53:17
+; Sprite2asm trees-plants-ch00-mcf0.png 19 jun. 2020 11:21:04
 ; charset 33 uniques
-!byte $00,$00,$00,$00,$00,$00,$00,$03
-!byte $00,$00,$00,$03,$0e,$0e,$0e,$3a
-!byte $00,$00,$c0,$b3,$af,$ab,$ba,$ae
-!byte $00,$30,$fc,$ab,$ab,$aa,$aa,$be
-!byte $00,$00,$0c,$3b,$3a,$ea,$ea,$ea
-!byte $00,$03,$0e,$3a,$fa,$ba,$aa,$ae
-!byte $00,$00,$c0,$b0,$b0,$ac,$ac,$b3
-!byte $00,$00,$00,$0c,$3b,$3a,$eb,$ab
-!byte $00,$00,$00,$30,$ec,$ab,$aa,$aa
-!byte $00,$00,$00,$03,$0e,$ce,$ba,$ea
-!byte $00,$00,$00,$c0,$c0,$c0,$b0,$ac
-!byte $0e,$3a,$3b,$fa,$ab,$ae,$ba,$ea
-!byte $fb,$be,$ab,$ef,$ab,$ee,$eb,$be
-!byte $ae,$eb,$aa,$ea,$ba,$fa,$af,$ba
-!byte $eb,$ea,$ee,$ae,$eb,$ea,$bb,$ba
-!byte $ba,$ae,$aa,$ab,$ea,$ba,$ae,$eb
-!byte $bb,$aa,$eb,$ab,$aa,$ba,$eb,$ae
-!byte $ef,$eb,$aa,$aa,$be,$eb,$bb,$eb
-!byte $ae,$ba,$fa,$ea,$ba,$eb,$ab,$ae
-!byte $fa,$be,$ba,$ab,$ef,$ee,$ae,$ee
-!byte $ea,$aa,$ae,$bb,$eb,$aa,$bb,$ee
-!byte $ac,$af,$ae,$be,$ea,$ea,$ee,$aa
-!byte $ba,$ba,$be,$fa,$bb,$ef,$ff,$ef
-!byte $ba,$bb,$ba,$aa,$bb,$ee,$ff,$ee
-!byte $ba,$ea,$bf,$ff,$bb,$ff,$ff,$fe
-!byte $bb,$ef,$bb,$ef,$bb,$ef,$ff,$ef
-!byte $bb,$ef,$bb,$fe,$bb,$fe,$ff,$fe
-!byte $af,$af,$bb,$ee,$bf,$ee,$ff,$ee
-!byte $ba,$ee,$bb,$fe,$bb,$fe,$ff,$fe
-!byte $bb,$ee,$fb,$ef,$bb,$ef,$ff,$ef
-!byte $ea,$fa,$bf,$ee,$bf,$ee,$ff,$fe
-!byte $ab,$ae,$bb,$ff,$bf,$ee,$ff,$ee
-!byte $ba,$ea,$bf,$ee,$bb,$fe,$ff,$ee
-;i ()
+!byte $00,$00,$00,$00,$00,$00,$00,$02
+!byte $00,$00,$00,$02,$0b,$0b,$0b,$2f
+!byte $00,$00,$80,$e2,$fa,$fe,$ef,$fb
+!byte $00,$20,$a8,$fe,$fe,$ff,$ff,$eb
+!byte $00,$00,$08,$2e,$2f,$bf,$bf,$bf
+!byte $00,$02,$0b,$2f,$af,$ef,$ff,$fb
+!byte $00,$00,$80,$e0,$e0,$f8,$f8,$e2
+!byte $00,$00,$00,$08,$2e,$2f,$be,$fe
+!byte $00,$00,$00,$20,$b8,$fe,$ff,$ff
+!byte $00,$00,$00,$02,$0b,$8b,$ef,$bf
+!byte $00,$00,$00,$80,$80,$80,$e0,$f8
+!byte $0b,$2f,$2e,$af,$fe,$fb,$ef,$bf
+!byte $ae,$eb,$fe,$ba,$fe,$bb,$be,$eb
+!byte $fb,$be,$ff,$bf,$ef,$af,$fa,$ef
+!byte $be,$bf,$bb,$fb,$be,$bf,$ee,$ef
+!byte $ef,$fb,$ff,$fe,$bf,$ef,$fb,$be
+!byte $ee,$ff,$be,$fe,$ff,$ef,$be,$fb
+!byte $ba,$be,$ff,$ff,$eb,$be,$ee,$be
+!byte $fb,$ef,$af,$bf,$ef,$be,$fe,$fb
+!byte $af,$eb,$ef,$fe,$ba,$bb,$fb,$bb
+!byte $bf,$ff,$fb,$ee,$be,$ff,$ee,$bb
+!byte $f8,$fa,$fb,$eb,$bf,$bf,$bb,$ff
+!byte $ef,$ef,$eb,$af,$ee,$ba,$aa,$ba
+!byte $ef,$ee,$ef,$ff,$ee,$bb,$aa,$bb
+!byte $ef,$bf,$ea,$aa,$ee,$aa,$aa,$ab
+!byte $ee,$ba,$ee,$ba,$ee,$ba,$aa,$ba
+!byte $ee,$ba,$ee,$ab,$ee,$ab,$aa,$ab
+!byte $fa,$fa,$ee,$bb,$ea,$bb,$aa,$bb
+!byte $ef,$bb,$ee,$ab,$ee,$ab,$aa,$ab
+!byte $ee,$bb,$ae,$ba,$ee,$ba,$aa,$ba
+!byte $bf,$af,$ea,$bb,$ea,$bb,$aa,$ab
+!byte $fe,$fb,$ee,$aa,$ea,$bb,$aa,$bb
+!byte $ef,$bf,$ea,$bb,$ee,$ab,$aa,$bb
+; (129) TWAiN PAiN 'i'
 !byte $18,$00,$38,$18,$18,$18,$3c,$00
+; (130) objects
+; Sprite2asm trees-objs-ch82-mcb0.png 19 jun. 2020 11:31:07
+; charset 17 uniques
+!byte $00,$00,$00,$00,$00,$00,$00,$02
+!byte $00,$2a,$2e,$2e,$2e,$ba,$be,$ee
+!byte $00,$00,$00,$00,$00,$00,$02,$09
+!byte $00,$28,$96,$95,$9f,$9d,$57,$55
+!byte $00,$00,$00,$80,$80,$60,$60,$60
+!byte $00,$00,$00,$08,$2e,$2f,$be,$fe
+!byte $00,$00,$00,$20,$b8,$fe,$ff,$ff
+!byte $00,$00,$00,$02,$0b,$8b,$ef,$bf
+!byte $00,$00,$00,$80,$80,$80,$e0,$f8
+!byte $02,$02,$0b,$0b,$2f,$2f,$2a,$00
+!byte $fa,$fa,$e8,$e8,$a0,$a0,$80,$00
+!byte $09,$29,$96,$9d,$95,$96,$2a,$00
+!byte $55,$55,$55,$95,$95,$aa,$aa,$00
+!byte $68,$9a,$6a,$9a,$6a,$a8,$a0,$00
+!byte $ff,$f7,$dd,$3e,$07,$01,$00,$00
+!byte $f6,$75,$9d,$59,$b7,$9d,$b9,$00
+!byte $f7,$de,$77,$d6,$d4,$58,$58,$00
+chars_objs:
+; Sprite2asm trees-charobjs-ch00.png 19 jun. 2020 11:35:52
+; charset 4 uniques
+!byte $00,$18,$50,$ec,$be,$de,$7c,$00
+!byte $00,$00,$aa,$54,$34,$38,$18,$00
+!byte $00,$00,$4a,$6c,$38,$18,$00,$00
+!byte $00,$00,$00,$1c,$26,$43,$83,$00

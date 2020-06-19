@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 2568 bytes exomized
+; 2706 bytes exomized
 
 ; variables
 !addr {
@@ -49,6 +49,7 @@ COLOR_CROWN_HIGHLIGHT = LIGHT_GREEN
 COLOR_CROWN_BRANCHES = ORANGE
 COLOR_TREES_LIGHT = ORANGE
 COLOR_TREES_DARK = BLACK
+COLOR_OBJECTS = DARK_GREY
 
 *=$0801
 !byte $0c,$08,$c0,$07,$9e,$20,$32,$30,$36,$32,$00,$00,$00   ; 1984 SYS 2062
@@ -66,11 +67,9 @@ OK_its_PAL:
             ; global colors and VIC settings
             lda #COLOR_BORDER   ; NOTE D020 could already be set by decruncher
             sta $D020
-            lda #COLOR_DISTANT
-            sta VIC_COL_TXT_MC1
             sta ZP_SYNC ; set to 0
             sta rng_zp_high ; set to 0
-            lda #COLOR_PLANTS
+            lda #COLOR_PLANTS_OUTLINE
             sta VIC_COL_TXT_MC2
             lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
             sta $D018
@@ -84,7 +83,7 @@ OK_its_PAL:
             ldx #0
 -           lda #$20
             sta $0400,x
-            lda #8+COLOR_PLANTS_OUTLINE
+            lda #8+COLOR_PLANTS
             sta $DB00,x
             inx
             bne -
@@ -672,6 +671,19 @@ IRQ_Set_x_scroll:
             jmp END_IRQ
 
 
+; set X-scroll and fix char MC1
+IRQ_Set_x_scroll_1:
+            pha
+            tya
+            pha
+            ldy ZP_IRQNUMBER
+            lda Raster_Data1,y  ; data
+            sta $D016
+            lda #COLOR_OBJECTS
+            sta VIC_COL_TXT_MC1
+            jmp END_IRQ
+
+
 ; set X-scroll and sprite priority
 IRQ_Set_x_scroll_2:
             pha
@@ -693,6 +705,8 @@ IRQ_Top:
 
             lda #COLOR_SKY
             sta $D021
+            lda #COLOR_DISTANT
+            sta VIC_COL_TXT_MC1
             lda #COLOR_CROWN_HIGHLIGHT
             sta VIC_SPR_MC1
             lda #COLOR_CROWN_BRANCHES
@@ -859,7 +873,7 @@ Raster_IRQ:
             !byte <IRQ_Set_tree_colors
             !byte <IRQ_Set_reg
             !byte <IRQ_Set_reg
-            !byte <IRQ_Set_x_scroll
+            !byte <IRQ_Set_x_scroll_1
             !byte <IRQ_Bump_sprites
             !byte <IRQ_Set_x_scroll
             !byte <IRQ_Set_x_scroll
@@ -1037,6 +1051,17 @@ getreadytext:
 !scr "         get ready for spunk!           "
 !scr "                                        "
 getreadytext_end:
+
+
+;----------------------------------------------------------------------------
+; DATA ground objects
+;----------------------------------------------------------------------------
+
+; TODO
+
+; charmap 26 bytes (13 x 2)
+!byte $82,$83,$84,$85,$86,$87,$88,$89,$8a,$87,$88,$89,$8a
+!byte $8b,$8c,$8d,$8e,$8f,$90,$91,$92,$91,$92,$91,$92,$90
 
 
 ;----------------------------------------------------------------------------
