@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 2706 bytes exomized
+; 2890 bytes exomized
 
 ; variables
 !addr {
@@ -120,9 +120,8 @@ OK_its_PAL:
 
             lda #$FF        ; ACK IRQs
             sta $D019
-
-            lda $D012
             sta rng_zp_low ; seed, can be anything except 0
+
             lda InitRaster  ; raster line to trigger
             sta $D012
             lda #%00011000+3  ; set bit 9 of raster line to 0 + Y-scroll
@@ -132,6 +131,8 @@ OK_its_PAL:
             sta $FFFE
             lda #>IRQ_Top
             sta $FFFF
+
+            jsr music_init
 
             cli
 
@@ -210,6 +211,7 @@ init_state_0_title_screen:
             jsr draw_distant_background
             jsr draw_logo
             jsr draw_introtext
+            jsr draw_object
 next_state: inc ZP_GAMESTATE
             jmp state_handled
 
@@ -550,6 +552,24 @@ draw_notext:
             rts
 
 
+; TODO 3 different layers: Y=15 Y=17 Y=19
+; TODO single character objects
+draw_object:
+            SCROLL1Y=19
+            ldx #0
+-           lda groundobj+OBJ2_OFFSET,x
+            sta $0400+SCROLL1Y*40 + 2,x
+            lda groundobj+GROUNDOBJ_STRIDE+OBJ2_OFFSET,x
+            sta $0400+40+SCROLL1Y*40 + 2,x
+            lda #8+OBJ2_COLOR
+            sta $D800+SCROLL1Y*40 + 2,x
+            sta $D800+40+SCROLL1Y*40 + 2,x
+            inx
+            cpx #OBJ2_WIDTH
+            bne -
+            rts
+
+
 ;------
 ; prng
 ;------
@@ -671,7 +691,7 @@ IRQ_Set_x_scroll:
             jmp END_IRQ
 
 
-; set X-scroll and fix char MC1
+; set X-scroll and fix char MC1 (playfield)
 IRQ_Set_x_scroll_1:
             pha
             tya
@@ -684,7 +704,7 @@ IRQ_Set_x_scroll_1:
             jmp END_IRQ
 
 
-; set X-scroll and sprite priority
+; set X-scroll and sprite priority (plants)
 IRQ_Set_x_scroll_2:
             pha
             tya
@@ -694,6 +714,11 @@ IRQ_Set_x_scroll_2:
             sta $D016
             lda #$FF            ; all sprites behind characters
             sta VIC_SPR_BEHIND
+            txa
+            pha
+            jsr music_play
+            pla
+            tax
             jmp END_IRQ
 
 
@@ -702,6 +727,18 @@ IRQ_Top:
             pha
             tya
             pha
+
+            ; DEBUG
+            lda Scroll1
+            clc
+            adc #1
+            and #$7
+            ora #%00010000
+            sta Scroll1
+            eor #$03
+            sta Scroll2
+            eor #$07
+            sta Scroll3
 
             lda #COLOR_SKY
             sta $D021
@@ -1057,11 +1094,29 @@ getreadytext_end:
 ; DATA ground objects
 ;----------------------------------------------------------------------------
 
-; TODO
+OBJ1_OFFSET=0
+OBJ1_WIDTH=2
+OBJ1_COLOR=RED
+OBJ2_OFFSET=2
+OBJ2_WIDTH=3
+OBJ2_COLOR=WHITE
+OBJ3_OFFSET=5
+OBJ3_WIDTH=8
+OBJ3_COLOR=GREEN
 
+GROUNDOBJ_STRIDE=13
+groundobj:
 ; charmap 26 bytes (13 x 2)
 !byte $82,$83,$84,$85,$86,$87,$88,$89,$8a,$87,$88,$89,$8a
 !byte $8b,$8c,$8d,$8e,$8f,$90,$91,$92,$91,$92,$91,$92,$90
+
+
+;----------------------------------------------------------------------------
+; MUSIC
+;----------------------------------------------------------------------------
+            * = $1800
+
+            !src "player2.inc"
 
 
 ;----------------------------------------------------------------------------
