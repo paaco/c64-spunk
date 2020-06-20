@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3150 bytes exomized
+; 3229 bytes exomized
 
 ; variables
 !addr {
@@ -33,13 +33,15 @@ TREETOPY=50             ; first y-position of trees
 ; animation frames
 FRAME_SPUNK_WALK=SPRITE_OFFSET + (sprites_spunk-sprites)/64
 FRAME_SPUNK_JUMP=FRAME_SPUNK_WALK+3
+; each enemy has 2 frames
+FRAME_ENEMY0_WALK=FRAME_SPUNK_WALK+4
 
 BLACK=0 : WHITE=1 : RED=2 : CYAN=3
 PURPLE=4 : GREEN=5 : BLUE=6 : YELLOW=7
 ORANGE=8 : BROWN=9 : LIGHT_RED=10 : DARK_GREY=11
 GREY=12 : LIGHT_GREEN=13 : LIGHT_BLUE=14 : LIGHT_GREY=15
 
-COLOR_BORDER = LIGHT_BLUE
+COLOR_BORDER = GREEN
 COLOR_SKY = BLUE
 COLOR_DISTANT = BLACK
 COLOR_BACKGROUND = BROWN
@@ -81,8 +83,10 @@ OK_its_PAL:
 
             ; partial cls and color setup
             ldx #0
--           lda #$20
+-           lda toptext,x
             sta $0400,x
+            lda toptext_color,x
+            sta $D800,x
             lda #8+COLOR_PLANTS
             sta $DB00,x
             inx
@@ -120,7 +124,11 @@ OK_its_PAL:
 
             lda #$FF        ; ACK IRQs
             sta $D019
+
+            lda $D012
+            ora #$01
             sta rng_zp_low ; seed, can be anything except 0
+            jsr random
 
             lda InitRaster  ; raster line to trigger
             sta $D012
@@ -131,8 +139,6 @@ OK_its_PAL:
             sta $FFFE
             lda #>IRQ_Top
             sta $FFFF
-
-            jsr music_init
 
             cli
 
@@ -153,6 +159,20 @@ loop:       lda ZP_SYNC
             bne +
 
         ; game_state 0 : title screen
+            ; flicker PRESS FIRE TO START
+            PRESSFIREY=16
+            dec delay
+            bpl ++
+            lda #5
+            sta delay
+            ldx #0
+-           lda $D800+PRESSFIREY*40,x
+            eor #$01
+            sta $D800+PRESSFIREY*40,x
+            inx
+            cpx #40
+            bne -
+++
             ; wait for fire
             lda $DC00           ; Joystick A in control port 2 0=active: 1=up 2=down 4=left 8=right 16=fire
             and $DC01           ; Joystick B in control port 1 0=active: 1=up 2=down 4=left 8=right 16=fire
@@ -164,6 +184,7 @@ loop:       lda ZP_SYNC
             bne +
 
         ; game_state 1 : get ready
+            jsr anim_Spunk
             ; wait a few seconds
             dec getready
             bne state_handled
@@ -203,20 +224,37 @@ init_state_0_title_screen:
             lda #%11111111 ; sprites behind text
             sta Spr_Behind
             ldx #0
+            stx delay
 -           lda INIT_SPRITES_DATA,x
             sta SPRITES_DATA,x
             inx
             cpx #END_SPRITES_DATA-INIT_SPRITES_DATA
             bne -
+            ; pick and place random enemy and place Spunk
+            jsr random
+            and #7-1 ; select 0,2,4 or 6
+            clc
+            adc #FRAME_ENEMY0_WALK
+            sta Enemy_Ptr
+            jsr random
+            and #7
+            tax
+            lda ENEMY_COLORS,x
+            sta Enemy_Color
+            lda #174
+            sta Enemy_Y+1
+            lda #190
+            sta Spunk_Y+1
+            jsr music_init
+            jsr reset_Spunk
             jsr draw_distant_background
             jsr draw_logo
             jsr draw_introtext
-            jsr draw_object
+            ;jsr draw_object ; DEBUG
 next_state: inc ZP_GAMESTATE
             jmp state_handled
 
 init_state_1_get_ready:
-            ; TODO setup possible sprites and scroll values
             jsr draw_distant_background
             jsr draw_getreadytext
             lda #100
@@ -417,13 +455,17 @@ move_Spunk:
             ; FIRE
             inc Spunk_X ; DEBUG
 +           cpy #%00011111
-            bne .animate
+            bne anim_Spunk
             ; reset anim frame
-            ldx #FRAME_SPUNK_WALK
+reset_Spunk:ldx #FRAME_SPUNK_WALK
             lda #0
             beq .anim_ok ; jmp always
-.animate:   dec delay
+anim_Spunk: dec delay
             bpl .ok3
+            ; animate enemy always
+            lda Enemy_Ptr
+            eor #1
+            sta Enemy_Ptr
             lda #4  ; delay
             ldx Spunk_Ptr
             inx
@@ -728,18 +770,6 @@ IRQ_Top:
             tya
             pha
 
-            ; DEBUG
-            lda Scroll1
-            clc
-            adc #1
-            and #$7
-            ora #%00010000
-            sta Scroll1
-            eor #$03
-            sta Scroll2
-            eor #$07
-            sta Scroll3
-
             lda #COLOR_SKY
             sta $D021
             lda #COLOR_DISTANT
@@ -801,9 +831,9 @@ Crown_X_MSB:lda #0
             sta VIC_SPR_X_MSB
 
             ; y-positions
-Enemy_Y:    lda #210
+Enemy_Y:    lda #0          ; SELF-MODIFIED
 Crown_Y6:   sta $D000       ; SELF-MODIFIED Y6
-Spunk_Y:    lda #150
+Spunk_Y:    lda #0          ; SELF-MODIFIED
 Crown_Y7:   sta $D000       ; SELF-MODIFIED Y7
 
             lda #TREETOPY
@@ -964,7 +994,7 @@ Spunk_X:    !byte 0 ; Spunk
 Sprites_X_posL:
             !byte 0,0,0,0,0,0 ; trees
             !byte 0 ; enemy
-            !byte 0 ; Spunk
+Spunk_XL:   !byte 0 ; Spunk
 
 Sprites_Y_pos:
             !byte 0,0,0,0,0,0 ; trees
@@ -973,7 +1003,7 @@ Sprites_Y_pos:
 
 Sprites_colors:
             !byte 0,0,0,0,0,0 ; trees
-            !byte 0 ; enemy
+Enemy_Color:!byte 0 ; enemy
             !byte 0 ; Spunk
 
 Sprites_ptrs:
@@ -984,7 +1014,7 @@ Spunk_Ptr:  !byte 0
 
 ; Sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 Sprites_prio:
-            !byte 0,7,1,2,3,4,5,6
+            !byte 0,7,1,2,3,4,6,5
 
 MSB:
             !byte 1,2,4,8,16,32,64,128
@@ -992,16 +1022,18 @@ TIMES_3:
             !byte 0,3,6,9,12,15 ; note only 6 entries
 TIMES_5:
             !byte 0,5,10,15,20,25,30,35
-TREE_COLORS: ; 8 "different" colors to choose at random from
+TREE_COLORS: ; 8 different colors to choose from
             !byte CYAN,GREEN,YELLOW,LIGHT_GREEN,LIGHT_RED,GREEN,GREEN,GREEN
+ENEMY_COLORS: ; 8 different colors to choose from
+            !byte CYAN,YELLOW,ORANGE,LIGHT_RED,GREY,ORANGE,LIGHT_GREEN,LIGHT_BLUE
 
 ; overwrites Sprites_X_posH, Sprites_X_posL, Sprites_Y_pos, Sprites_colors, Sprites_ptrs
 INIT_SPRITES_DATA:
-            !byte $9F,$90,0,0,0,0, 12,12 ; 8x X_posH
+            !byte $9F,$90,0,0,0,0, 35,32 ; 8x X_posH
             !fill 8,0 ; 8x X_posL
             !fill 8,0 ; 8x Y_pos
             !byte LIGHT_RED,GREEN,0,0,0,0, 0,PURPLE ; colors
-            !byte SPRITE_OFFSET,SPRITE_OFFSET+20,0,0,0,0,0,FRAME_SPUNK_WALK
+            !byte SPRITE_OFFSET,SPRITE_OFFSET+20,0,0,0,0,0,0
 END_SPRITES_DATA:
 
 ; 8 tree templates consisting of ptr, max-Y and speed-index (corresponding with level 1 2 or 3)
@@ -1074,21 +1106,26 @@ introtext:
 !scr "          press fire to start!          "
 !scr "                                        "
 !scr "                                        "
-!scr "    written by alex ",34,"paaco",34," paalvast    "
-!scr "                                        "
 !scr "      (c) 2020 twa",129,"n pa",129,"n software     "
+!scr "                                        "
+!scr "    written by alex ",34,"paaco",34," paalvast    "
 introtext_end:
 
 getreadytext:
 ;      12345678901234567890123456789012345678
 !scr "                                        "
-!scr "   will spunk beat his friends          "
-!scr "   again and grab the most apples?      "
+!scr "       will spunk beat his friends      "
+!scr "       and grab the most apples?        "
 !scr "                                        "
 !scr "         get ready for spunk!           "
 !scr "                                        "
 getreadytext_end:
 
+toptext: ; 147=apple
+;     1234567890123456789012345678901234567890
+!scr "     score ",147,"000          high ",147,"000      "
+toptext_color:
+!scr "eeeeeeeeeeegeeeeeeeeeeeeeeeeeegeeeeeeeee"
 
 ;----------------------------------------------------------------------------
 ; DATA ground objects
