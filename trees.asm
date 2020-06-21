@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3258 bytes exomized
+; 3328 bytes exomized
 
 ; variables
 !addr {
@@ -9,6 +9,8 @@ ZP_IRQNUMBER = $10      ; current raster IRQ
 ZP_MSB = $11            ; temp location for MSB calculation
 ZP_SYNC = $12           ; set <>0 after top raster IRQ for sync
 ZP_GAMESTATE = $13      ; current game state (0=title screen, etc. see main loop)
+ZP_OBJEND = $14         ; temp end offset of object
+ZP_OBJCOLOR = $15       ; temp color of object
 rng_zp_low = $02
 rng_zp_high = $03
 
@@ -203,6 +205,7 @@ loop:       lda ZP_SYNC
             ; fall-through
 
 state_handled:
+            jsr draw_object ; DEBUG
             jsr draw_plants
 
             lda #0
@@ -245,7 +248,6 @@ init_state_0_title_screen:
             jsr draw_distant_background
             jsr draw_logo
             jsr draw_introtext
-            ;jsr draw_object ; DEBUG
 next_state: inc ZP_GAMESTATE
             jmp state_handled
 
@@ -608,20 +610,37 @@ draw_notext:
             rts
 
 
-; TODO 3 different layers: Y=15 Y=17 Y=19
-; TODO single character objects
+SCROLL1Y=15
+MAX_OBJ_WIDTH=10
+; x=screen offset + MAX_OBJECT_WIDTH
+;   screen offset should be in range [0..39], [80..119] or [160..199] otherwise the object is partially clipped
+; y=groundobj_off_color ptr 0,2,4, etc.
 draw_object:
-            SCROLL1Y=19
-            ldx #0
--           lda groundobj+OBJ2_OFFSET,x
-            sta $0400+SCROLL1Y*40 + 2,x
-            lda groundobj+GROUNDOBJ_STRIDE+OBJ2_OFFSET,x
-            sta $0400+40+SCROLL1Y*40 + 2,x
-            lda #8+OBJ2_COLOR
-            sta $D800+SCROLL1Y*40 + 2,x
-            sta $D800+40+SCROLL1Y*40 + 2,x
-            inx
-            cpx #OBJ2_WIDTH
+            ldy #4 ; groundobj_off_color ptr
+            ldx #MAX_OBJ_WIDTH+30+160 ; initial screen-offset
+
+            lda groundobj_off_color+2,y ; end of object data = ptr of next object
+            sta ZP_OBJEND
+            lda groundobj_off_color+1,y ; color
+            sta ZP_OBJCOLOR
+            lda groundobj_off_color,y ; ptr to object data
+            tay
+            lda CLIPPED,x ; 0=clipped,1=draw
+            beq .clip
+            ; only first char needs to be colored
+            lda ZP_OBJCOLOR
+            sta $D800 + SCROLL1Y*40-MAX_OBJ_WIDTH,x
+            sta $D800 + SCROLL1Y*40-MAX_OBJ_WIDTH + 40,x
+            ; draw object
+-           lda CLIPPED,x ; 0=clipped,1=draw
+            beq .clip
+            lda groundobj,y
+            sta $0400 + SCROLL1Y*40-MAX_OBJ_WIDTH,x
+            lda groundobj+GROUNDOBJ_STRIDE,y
+            sta $0400 + SCROLL1Y*40-MAX_OBJ_WIDTH + 40,x
+.clip       inx
+            iny
+            cpy ZP_OBJEND
             bne -
             rts
 
@@ -1032,6 +1051,16 @@ Sprites_speed:
 Sprites_prio:
             !byte 0,7,1,2,3,4,6,5
 
+; X-offset of plants 8.8 fixed point .8 is sub-pixels speed, lowest 3 bits is X-scroll, highest 5 is char scroll (mod 11)
+; increase to scroll left
+plants:
+            !byte 0,0
+
+
+;----------------------------------------------------------------------------
+; CONSTANTS
+;----------------------------------------------------------------------------
+
 MSB:
             !byte 1,2,4,8,16,32,64,128
 TIMES_3:
@@ -1069,12 +1098,6 @@ TEMPLATES_Y:
 TEMPLATES_SPEED:
             !byte $E0,$C0,$C0,$A0,$80
             !byte $C0,$C0,$A0
-
-
-; X-offset of plants 8.8 fixed point .8 is sub-pixels speed, lowest 3 bits is X-scroll, highest 5 is char scroll (mod 11)
-; increase to scroll left
-plants:
-            !byte 0,0
 
 
 ;----------------------------------------------------------------------------
@@ -1144,25 +1167,42 @@ toptext: ; 147=apple
 toptext_color:
 !scr "eeeeeeeeeeegeeeeeeeeeeeeeeeeeegeeeeeeeee"
 
+
 ;----------------------------------------------------------------------------
 ; DATA ground objects
 ;----------------------------------------------------------------------------
 
-OBJ1_OFFSET=0
-OBJ1_WIDTH=2
-OBJ1_COLOR=RED
-OBJ2_OFFSET=2
-OBJ2_WIDTH=3
-OBJ2_COLOR=WHITE
-OBJ3_OFFSET=5
-OBJ3_WIDTH=8
-OBJ3_COLOR=GREEN
-
-GROUNDOBJ_STRIDE=13
+GROUNDOBJ_STRIDE=32
 groundobj:
-; charmap 26 bytes (13 x 2)
-!byte $82,$83,$84,$85,$86,$87,$88,$89,$8a,$87,$88,$89,$8a
-!byte $8b,$8c,$8d,$8e,$8f,$90,$91,$92,$91,$92,$91,$92,$90
+;     tree        rock            plants                              apple   grass   grass   bump    apple   grass   grass   bump
+;     0   1   2   3   4   5   6   7   8   9   10  11  12  13  14  15  16  17  18  19  20  21  22  23  24  25  26  27  28  29  30  31
+!byte $82,$83,$20,$84,$85,$86,$20,$87,$88,$89,$8a,$87,$88,$89,$8a,$20,147,$20,148,$20,149,$20,150,$20,$20,$20,$20,$20,$20,$20,$20,$20
+!byte $8b,$8c,$20,$8d,$8e,$8f,$20,$90,$91,$92,$91,$92,$91,$92,$90,$20,$20,$20,$20,$20,$20,$20,$20,$20,147,$20,148,$20,149,$20,150,$20
+
+groundobj_off_color:
+        !byte 0,RED+8 ; tree width 3
+        !byte 3,WHITE+8 ; rock width 4
+        !byte 7,GREEN+8 ; plants width 9
+        !byte 16,YELLOW
+        !byte 18,GREEN
+        !byte 20,BLACK
+        !byte 22,BLACK
+        !byte 24,YELLOW
+        !byte 26,GREEN
+        !byte 28,BLACK
+        !byte 30,BLACK
+        !byte GROUNDOBJ_STRIDE ; this last one does not exist, but is necessary to calculate widths
+
+;256 bytes table to determine if object character should be clipped. 0 means clipped
+CLIPPED:
+            !fill MAX_OBJ_WIDTH,0
+            !fill 40,1
+            !fill 40,0
+            !fill 40,1
+            !fill 40,0
+            !fill 40,1
+            !fill 40,0
+            !fill 6,0
 
 
 ;----------------------------------------------------------------------------
