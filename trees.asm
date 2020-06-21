@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3229 bytes exomized
+; 3258 bytes exomized
 
 ; variables
 !addr {
@@ -196,14 +196,9 @@ loop:       lda ZP_SYNC
         ; game_state 2 : game play
             ; TODO handle game states:
             ; TODO 3.game over -> 4
-            ; TODO scroll objects here
+            jsr scroll_trees_X
             jsr move_Spunk
-            ; TODO DEBUG move plant movement elsewhere
-            ; lda plants+1
-            ; clc
-            ; adc #$80
-            ; sta plants+1
-            ; bcc +           ; no borrow? then ok
+            inc plants
             inc plants
             ; fall-through
 
@@ -421,6 +416,25 @@ update_sprite_data:
             bne -
             rts
 
+; apply speed to tree sprites
+scroll_trees_X:
+            ldx #0
+-           lda Sprites_X_posL,x
+            sec
+            sbc Sprites_speed,x
+            sta Sprites_X_posL,x
+            bcs +
+            dec Sprites_X_posH,x
+            bne +
+            ; free sprite on underflow
+            lda #0
+            sta Sprites_speed,x
+            sta Sprites_X_posL,x
+            sta Sprites_X_posH,x
++           inx
+            cpx #6
+            bne -
+            rts
 
 ; move Spunk based on joystick
 move_Spunk:
@@ -1011,6 +1025,8 @@ Sprites_ptrs:
 Enemy_Ptr:  !byte 0
 Spunk_Ptr:  !byte 0
 
+Sprites_speed:
+            !byte 0,0,0,0,0,0 ; trees
 
 ; Sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 Sprites_prio:
@@ -1032,11 +1048,12 @@ INIT_SPRITES_DATA:
             !byte $9F,$90,0,0,0,0, 35,32 ; 8x X_posH
             !fill 8,0 ; 8x X_posL
             !fill 8,0 ; 8x Y_pos
-            !byte LIGHT_RED,GREEN,0,0,0,0, 0,PURPLE ; colors
-            !byte SPRITE_OFFSET,SPRITE_OFFSET+20,0,0,0,0,0,0
+            !byte GREEN,LIGHT_RED,0,0,0,0, 0,PURPLE ; 8x colors
+            !byte SPRITE_OFFSET,SPRITE_OFFSET+20,0,0,0,0, 0,0 ; 8x pointers
+            !byte $E0,$80,0,0,0,0 ; 6x speeds
 END_SPRITES_DATA:
 
-; 8 tree templates consisting of ptr, max-Y and speed-index (corresponding with level 1 2 or 3)
+; 8 tree templates consisting of ptr, max-Y and speed (corresponding with levels 1,2,3 or 4)
 ; To make randomized choosing easier, there are some duplicates
 ; Tree sprites are stored from longest tree to smallest
 TEMPLATES_PTR:
@@ -1050,8 +1067,8 @@ TEMPLATES_Y:
             !byte 172, 161, 143
 
 TEMPLATES_SPEED:
-            !byte 4,3,3,2,1
-            !byte 3,3,2
+            !byte $E0,$C0,$C0,$A0,$80
+            !byte $C0,$C0,$A0
 
 
 ; X-offset of plants 8.8 fixed point .8 is sub-pixels speed, lowest 3 bits is X-scroll, highest 5 is char scroll (mod 11)
