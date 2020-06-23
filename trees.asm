@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3313 bytes exomized
+; 3366 bytes exomized
 
 ; variables
 !addr {
@@ -9,10 +9,11 @@ ZP_IRQNUMBER = $10      ; current raster IRQ
 ZP_MSB = $11            ; temp location for MSB calculation
 ZP_SYNC = $12           ; set <>0 after top raster IRQ for sync
 ZP_GAMESTATE = $13      ; current game state (0=title screen, etc. see main loop)
-ZP_OBJEND = $14         ; temp end offset of object
-ZP_OBJCOLOR = $15       ; temp color of object
-rng_zp_low = $02
-rng_zp_high = $03
+ZP_DIDSWAP = $14        ; indicates swap during bubble sort
+ZP_RNG_LOW = $15
+ZP_RNG_HIGH = $16
+ZP_SPRITES_IDX = $20    ; 8 sprite indices for sorting Y desc (depth sorting)
+Sprites_prio = $28      ; 8 sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 
 SPRITE_PTR = $07F8
 
@@ -72,7 +73,7 @@ OK_its_PAL:
             lda #COLOR_BORDER   ; NOTE D020 could already be set by decruncher
             sta $D020
             sta ZP_SYNC ; set to 0
-            sta rng_zp_high ; set to 0
+            sta ZP_RNG_HIGH ; set to 0
             lda #COLOR_PLANTS_OUTLINE
             sta VIC_COL_TXT_MC2
             lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
@@ -93,6 +94,13 @@ OK_its_PAL:
             sta $DB00,x
             inx
             bne -
+
+            ; init ZP_SPRITES_IDX with 0 to 7
+            ldx #7
+-           txa
+            sta ZP_SPRITES_IDX,x
+            dex
+            bpl -
 
             sei
 
@@ -129,7 +137,7 @@ OK_its_PAL:
 
             lda $D012
             ora #$01
-            sta rng_zp_low ; seed, can be anything except 0
+            sta ZP_RNG_LOW ; seed, can be anything except 0
             jsr random
 
             lda InitRaster  ; raster line to trigger
@@ -151,7 +159,7 @@ OK_its_PAL:
 ; main loop
 ;-----------
 
-            ; main loop in synced after IRQ_Top and runs in upper portion of the screen
+            ; main loop is synced after IRQ_Top and runs in upper portion of the screen
             ; it scrolls stuff and handles joystick and gameplay
 loop:       lda ZP_SYNC
             beq loop
@@ -240,9 +248,9 @@ init_state_0_title_screen:
             lda ENEMY_COLORS,x
             sta Enemy_Color
             lda #174
-            sta Enemy_Y+1
+            sta Enemy_Y
             lda #190
-            sta Spunk_Y+1
+            sta Spunk_Y
             jsr music_init
             jsr reset_Spunk
             jsr draw_distant_background
@@ -438,6 +446,39 @@ scroll_trees_X:
             bne -
             rts
 
+; Bubble sort Y to calculate Sprites_prio from Sprites_Y_pos (highest Y gets lowest prio 0..7)
+sort_sprite_Y:
+--          ldy #0
+            sty ZP_DIDSWAP
+-           ldx ZP_SPRITES_IDX,y
+            lda Sprites_Y_pos,x
+            iny
+            ldx ZP_SPRITES_IDX,y
+            cmp Sprites_Y_pos,x  ; ==> compared number is C=0 larger | C=1 smaller | C=Z=1 equal than A
+            beq .no_swap
+            bcs .no_swap
+            ; swap indices of Y-1 and Y(currently in X)
+            lda ZP_SPRITES_IDX-1,y
+            pha
+            stx ZP_SPRITES_IDX-1,y
+            pla
+            sta ZP_SPRITES_IDX,y
+            inc ZP_DIDSWAP
+.no_swap:   cpy #8-1
+            bne -
+            lda ZP_DIDSWAP
+            bne --
+            ; now fill Sprites_prio based on ZP_SPRITES_IDX
+            ldy #0
+-           ldx ZP_SPRITES_IDX,y
+            tya
+            sta Sprites_prio,x
+            iny
+            cpy #8
+            bne -
+            rts
+
+
 ; move Spunk based on joystick
 move_Spunk:
             lda $DC00           ; Joystick A in control port 2 0=active: 1=up 2=down 4=left 8=right 16=fire
@@ -447,24 +488,24 @@ move_Spunk:
             and #$01
             bne +
             ; UP
-            lda Spunk_Y+1
+            lda Spunk_Y
             sec
             sbc #$02
             cmp #150
             bcs .ok
             lda #150
-.ok:        sta Spunk_Y+1
+.ok:        sta Spunk_Y
 +           tya
             and #$02
             bne +
             ; DOWN
-            lda Spunk_Y+1
+            lda Spunk_Y
             clc
             adc #$02
             cmp #220
             bcc .ok2
             lda #220
-.ok2:       sta Spunk_Y+1
+.ok2:       sta Spunk_Y
 +           tya
             and #$10
             bne +
@@ -661,17 +702,17 @@ draw_object:
 ; the RNG. You can get 8-bit random numbers in A or 16-bit numbers
 ; from the zero page addresses. Leaves X/Y unchanged.
 random:
-        LDA rng_zp_high
+        LDA ZP_RNG_HIGH
         LSR
-        LDA rng_zp_low
+        LDA ZP_RNG_LOW
         ROR
-        EOR rng_zp_high
-        STA rng_zp_high ; high part of x ^= x << 7 done
+        EOR ZP_RNG_HIGH
+        STA ZP_RNG_HIGH ; high part of x ^= x << 7 done
         ROR             ; A has now x >> 9 and high bit comes from low byte
-        EOR rng_zp_low
-        STA rng_zp_low  ; x ^= x >> 9 and the low part of x ^= x << 7 done
-        EOR rng_zp_high
-        STA rng_zp_high ; x ^= x << 8 done
+        EOR ZP_RNG_LOW
+        STA ZP_RNG_LOW  ; x ^= x >> 9 and the low part of x ^= x << 7 done
+        EOR ZP_RNG_HIGH
+        STA ZP_RNG_HIGH ; x ^= x << 8 done
         RTS
 
 
@@ -828,6 +869,7 @@ IRQ_Top:
 
             txa
             pha
+            jsr sort_sprite_Y
             jsr update_sprite_X
             jsr update_sprite_data ; TODO this is only required when Y positions/prio changes
             pla
@@ -872,9 +914,9 @@ Crown_X_MSB:lda #0
             sta VIC_SPR_X_MSB
 
             ; y-positions
-Enemy_Y:    lda #0          ; SELF-MODIFIED
+            lda Enemy_Y
 Crown_Y6:   sta $D000       ; SELF-MODIFIED Y6
-Spunk_Y:    lda #0          ; SELF-MODIFIED
+            lda Spunk_Y
 Crown_Y7:   sta $D000       ; SELF-MODIFIED Y7
 
             lda #TREETOPY
@@ -1038,9 +1080,9 @@ Sprites_X_posL:
 Spunk_XL:   !byte 0 ; Spunk
 
 Sprites_Y_pos:
-            !byte 0,0,0,0,0,0 ; trees
-            !byte 0 ; enemy
-            !byte 0 ; Spunk
+            !byte 0,0,0,0,0,0 ; trees (only used for depth sorting; Y-positions indicate the lowest visible line of a tree)
+Enemy_Y:    !byte 0 ; enemy
+Spunk_Y:    !byte 0 ; Spunk
 
 Sprites_colors:
             !byte 0,0,0,0,0,0 ; trees
@@ -1055,9 +1097,6 @@ Spunk_Ptr:  !byte 0
 Sprites_speed:
             !byte 0,0,0,0,0,0 ; trees
 
-; Sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
-Sprites_prio:
-            !byte 0,7,1,2,3,4,6,5
 
 ; X-offset of plants 8.8 fixed point .8 is sub-pixels speed, lowest 3 bits is X-scroll, highest 5 is char scroll (mod 11)
 ; increase to scroll left
@@ -1084,7 +1123,7 @@ ENEMY_COLORS: ; 8 different colors to choose from
 INIT_SPRITES_DATA:
             !byte $9F,$90,0,0,0,0, 35,32 ; 8x X_posH
             !fill 8,0 ; 8x X_posL
-            !fill 8,0 ; 8x Y_pos
+            !byte 215,161,0,0,0,0,0,0 ; 8x Y_pos
             !byte GREEN,LIGHT_RED,0,0,0,0, 0,PURPLE ; 8x colors
             !byte SPRITE_OFFSET,SPRITE_OFFSET+20,0,0,0,0, 0,0 ; 8x pointers
             !byte $E0,$80,0,0,0,0 ; 6x speeds
@@ -1097,11 +1136,10 @@ TEMPLATES_PTR:
             !byte SPRITE_OFFSET, SPRITE_OFFSET+5, SPRITE_OFFSET+10, SPRITE_OFFSET+15, SPRITE_OFFSET+20
             !byte SPRITE_OFFSET+5, SPRITE_OFFSET+10, SPRITE_OFFSET+15
 
-; with Spunk placed at Y=150 his last screen line is 121 (sprite line 171)
-; There are 5 trees ending at screen lines: 132, 143, 161, 172, 186
+; Y-positions used for depth sorting
 TEMPLATES_Y:
-            !byte 186, 172, 161, 143, 132
-            !byte 172, 161, 143
+            !byte 215, 201, 191, 173, 161
+            !byte 201, 191, 173
 
 TEMPLATES_SPEED:
             !byte $E0,$C0,$C0,$A0,$80
