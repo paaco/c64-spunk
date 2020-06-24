@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3602 bytes exomized
+; 3582 bytes exomized
 
 ; variables
 !addr {
@@ -71,8 +71,8 @@ COLOR_OBJECTS = DARK_GREY
 
 OK_its_PAL:
             ; global colors and VIC settings
-            lda #COLOR_BORDER   ; NOTE D020 could already be set by decruncher
-            sta $D020
+            ;lda #COLOR_BORDER   ; NOTE D020 could already be set by decruncher
+            ;sta $D020
             sta ZP_SYNC ; set to 0
             sta ZP_RNG_HIGH ; set to 0
             lda #COLOR_PLANTS_OUTLINE
@@ -164,7 +164,7 @@ OK_its_PAL:
             ; it scrolls stuff and handles joystick and gameplay
 loop:       lda ZP_SYNC
             beq loop
-            sta $D020               ; DEBUG
+            ;sta $D020               ; DEBUG
 
             lda ZP_GAMESTATE
             bne +
@@ -207,11 +207,8 @@ loop:       lda ZP_SYNC
         ; game_state 2 : game play
             ; TODO handle game states:
             ; TODO 3.game over -> 4
-            dec $d020
             jsr move_objects
-            dec $d020
             jsr scroll_trees_X
-            dec $d020
             jsr move_Spunk
             inc plants
             inc plants
@@ -222,7 +219,7 @@ state_handled:
 
             lda #0
             sta ZP_SYNC
-            sta $D020               ; DEBUG
+            ;sta $D020               ; DEBUG
             jmp loop
 
 
@@ -700,6 +697,10 @@ draw_notext:
 ; objects1(top)=$80*2 = $100, objects2(middle)=$A0*2 = $140, objects3(bottom) = $C0*2=$180
 move_objects:
 .move_objects1:
+            ; lda objects1+1 ; low
+            ; sec
+            ; sbc #$00
+            ; sta objects1+1
             lda objects1 ; hi
             sec
             sbc #$01
@@ -1128,10 +1129,10 @@ Raster_Line:
             !byte TREETOPY + 42*0 + 40 ; 90
             !byte TREETOPY + 42*1 + 35 ; 127 ; fix MC1
             !byte TREETOPY + 42*1 + 39 ; 131
-            !byte 50 + 8*11 - 1 ; 137 (-1 to avoid flickering)
-            !byte 50 + 8*11 + 2 ; 139 fix COL
+            !byte 50 + 8*11 + 2 ; 139 fix tree COL and y-expansion
             !byte 50 + 8*11 + 5 ; 143 fix MC2
             !byte 50 + 8*12 ; 146 set sprites before/behind
+            !byte 50 + 8*12 + 6; 152 fix ground color
             !byte 50 + 8*15 ; 170 ; scroll top level
             !byte TREETOPY + 42*2 + 40 ; 174
             !byte 50 + 8*17 ; 186 ; scroll mid level
@@ -1144,8 +1145,8 @@ Raster_IRQ:
             !byte <IRQ_Bump_sprites
             !byte <IRQ_Set_reg
             !byte <IRQ_Start_trees
-            !byte <IRQ_Set_reg
             !byte <IRQ_Set_tree_colors
+            !byte <IRQ_Set_reg
             !byte <IRQ_Set_reg
             !byte <IRQ_Set_reg
             !byte <IRQ_Set_x_scroll_1
@@ -1160,10 +1161,10 @@ Raster_Data1:
             !byte TREETOPY + 42*1
             !byte COLOR_TREES_DARK
             !byte TREETOPY + 42*2
-            !byte COLOR_BACKGROUND
             !byte 0
             !byte WHITE
 Spr_Behind: !byte %00000000 ; sprites before/behind chars in playfield
+            !byte COLOR_BACKGROUND
 Scroll1:    !byte %00010000
             !byte TREETOPY + 42*3
 Scroll2:    !byte %00010000
@@ -1176,10 +1177,10 @@ Raster_Data2:
             !byte 0
             !byte <VIC_SPR_MC1
             !byte 0
-            !byte <$D021
             !byte 0
             !byte <VIC_SPR_MC2
             !byte <VIC_SPR_BEHIND
+            !byte <$D021
             !byte 0
             !byte 0
             !byte 0
@@ -1298,8 +1299,8 @@ TEMPLATES_SPEED:
 ;----------------------------------------------------------------------------
 
 distant:
-; Sprite2asm trees-distant-ch40-mc0f.png 25 mei 2020 20:52:36
-; charmap 560 bytes (40 x 14) hacked 40x13 520
+; Sprite2asm trees-distant-ch40-mc0f.png 24 jun. 2020 14:28:36
+; charmap 560 bytes (40 x 14) hacked 40x12 520
 !byte $42,$41,$42,$41,$42,$41,$42,$41,$40,$42,$41,$42,$41,$43,$40,$42,$41,$42,$41,$42,$41,$42,$41,$44,$40,$42,$41,$42,$41,$40,$40,$42,$41,$42,$41,$42,$41,$42,$41,$40
 !byte $45,$41,$46,$41,$45,$41,$46,$41,$45,$45,$41,$46,$41,$47,$48,$45,$41,$46,$41,$45,$41,$46,$41,$43,$48,$45,$41,$46,$41,$45,$41,$45,$41,$46,$41,$45,$41,$46,$41,$43
 !byte $46,$49,$45,$45,$46,$49,$45,$45,$41,$46,$49,$45,$45,$4a,$4b,$46,$49,$45,$45,$46,$49,$45,$45,$4a,$4b,$46,$49,$45,$45,$41,$41,$46,$49,$45,$45,$46,$49,$45,$45,$47
@@ -1310,10 +1311,10 @@ distant:
 !byte $51,$45,$52,$40,$51,$45,$52,$40,$45,$52,$45,$52,$40,$40,$40,$51,$45,$52,$40,$51,$45,$52,$40,$40,$40,$51,$45,$52,$51,$45,$52,$51,$45,$52,$40,$51,$45,$52,$40,$40
 !byte $40,$53,$54,$40,$40,$53,$54,$40,$53,$54,$55,$54,$40,$40,$40,$40,$53,$54,$40,$40,$53,$54,$40,$40,$40,$40,$53,$54,$40,$53,$54,$40,$53,$54,$40,$40,$53,$54,$40,$40
 !byte $40,$53,$56,$40,$40,$55,$54,$40,$55,$54,$53,$54,$40,$40,$40,$40,$55,$54,$40,$40,$53,$56,$40,$40,$40,$40,$55,$54,$40,$53,$56,$40,$55,$54,$40,$40,$55,$54,$40,$40
-!byte $40,$55,$54,$40,$40,$53,$54,$40,$53,$56,$53,$54,$40,$40,$57,$58,$53,$54,$40,$40,$53,$54,$40,$40,$57,$58,$53,$56,$40,$55,$54,$40,$53,$54,$40,$40,$55,$56,$40,$40
-!byte $40,$53,$54,$57,$58,$59,$56,$57,$59,$54,$59,$56,$57,$58,$5a,$5b,$53,$54,$57,$58,$59,$54,$57,$58,$5a,$5b,$59,$54,$40,$53,$54,$40,$59,$56,$57,$58,$53,$54,$40,$40
-!byte $58,$5c,$5d,$5a,$5b,$5c,$5d,$5a,$5c,$5d,$5c,$5d,$5a,$5b,$57,$58,$5c,$5d,$5a,$5b,$5c,$5d,$5a,$5b,$57,$58,$5c,$5d,$40,$5c,$5d,$40,$5c,$5d,$5a,$5b,$5c,$5d,$57,$58
-!byte $5b,$5e,$5f,$40,$40,$5e,$5f,$40,$5a,$5b,$5e,$5f,$40,$40,$5a,$5b,$5e,$5f,$40,$40,$5e,$5f,$40,$40,$5a,$5b,$5e,$5f,$40,$5e,$5f,$40,$5e,$5f,$40,$40,$5e,$5f,$5a,$5b
+!byte $40,$55,$54,$40,$40,$53,$54,$40,$53,$56,$53,$54,$40,$40,$40,$40,$53,$54,$40,$40,$53,$54,$40,$40,$40,$40,$53,$56,$40,$55,$54,$40,$53,$54,$40,$40,$55,$56,$40,$40
+!byte $40,$53,$54,$57,$58,$59,$56,$57,$59,$54,$59,$56,$57,$58,$40,$40,$53,$54,$57,$58,$59,$54,$57,$58,$40,$40,$59,$54,$40,$53,$54,$40,$59,$56,$57,$58,$53,$54,$40,$40
+!byte $58,$5a,$5b,$5c,$5d,$5a,$5b,$5c,$5a,$5b,$5a,$5b,$5c,$5d,$57,$58,$5a,$5b,$5c,$5d,$5a,$5b,$5c,$5d,$57,$58,$5a,$5b,$40,$5a,$5b,$40,$5a,$5b,$5c,$5d,$5a,$5b,$57,$58
+!byte $5d,$5e,$5f,$40,$40,$5e,$5f,$40,$5c,$5d,$5e,$5f,$40,$40,$5c,$5d,$5e,$5f,$40,$40,$5e,$5f,$40,$40,$5c,$5d,$5e,$5f,$40,$5e,$5f,$40,$5e,$5f,$40,$40,$5e,$5f,$5c,$5d
 
 
 ;----------------------------------------------------------------------------
@@ -1358,7 +1359,7 @@ toptext: ; 147=apple
 ;     1234567890123456789012345678901234567890
 !scr "     score ",147,"000          high ",147,"000      "
 toptext_color:
-!scr "eeeeeeeeeeegeeeeeeeeeeeeeeeeeegeeeeeeeee"
+!scr "aaaaaaaaaaagaaaaaaaaaaaaaaaaaagaaaaaaaaa"
 
 
 ;----------------------------------------------------------------------------
