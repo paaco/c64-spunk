@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3366 bytes exomized
+; 3499 bytes exomized
 
 ; variables
 !addr {
@@ -231,6 +231,7 @@ init_state_0_title_screen:
             sta Spr_Behind
             ldx #0
             stx delay
+            stx tree_delay
 -           lda INIT_SPRITES_DATA,x
             sta SPRITES_DATA,x
             inx
@@ -440,11 +441,46 @@ scroll_trees_X:
             lda #0
             sta Sprites_speed,x
             sta Sprites_X_posL,x
+            lda #$B8
             sta Sprites_X_posH,x
 +           inx
             cpx #6
             bne -
+            ; if the time comes, fetch a new tree
+            lda tree_delay
+            beq add_tree
+            dec tree_delay
             rts
+add_tree:
+            ; find an empty spot
+            ldx #0
+-           lda Sprites_speed,x
+            beq +
+            inx
+            cpx #6
+            bne -
+            rts
+            ; found one, fetch new tree in empty
++           jsr random
+            and #$07
+            tay
+            lda TEMPLATES_PTR,y
+            sta Sprites_ptrs,x
+            lda TEMPLATES_Y,y
+            sta Sprites_Y_pos,x
+            lda TEMPLATES_SPEED,y
+            sta Sprites_speed,x
+            jsr random
+            and #$07
+            tay
+            lda TREE_COLORS,y
+            sta Sprites_colors,x
+            lda #50 ; take at least a small break
+            sta tree_delay
+            rts
+
+tree_delay: !byte 0
+
 
 ; Bubble sort Y to calculate Sprites_prio from Sprites_Y_pos (highest Y gets lowest prio 0..7)
 sort_sprite_Y:
