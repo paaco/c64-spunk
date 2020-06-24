@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3499 bytes exomized
+; 3602 bytes exomized
 
 ; variables
 !addr {
@@ -12,6 +12,7 @@ ZP_GAMESTATE = $13      ; current game state (0=title screen, etc. see main loop
 ZP_DIDSWAP = $14        ; indicates swap during bubble sort
 ZP_RNG_LOW = $15
 ZP_RNG_HIGH = $16
+ZP_TEMP = $17           ; temp buffer
 ZP_SPRITES_IDX = $20    ; 8 sprite indices for sorting Y desc (depth sorting)
 Sprites_prio = $28      ; 8 sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 
@@ -206,14 +207,17 @@ loop:       lda ZP_SYNC
         ; game_state 2 : game play
             ; TODO handle game states:
             ; TODO 3.game over -> 4
+            dec $d020
+            jsr move_objects
+            dec $d020
             jsr scroll_trees_X
+            dec $d020
             jsr move_Spunk
             inc plants
             inc plants
             ; fall-through
 
 state_handled:
-            jsr draw_objects ; DEBUG
             jsr draw_plants
 
             lda #0
@@ -271,6 +275,11 @@ init_state_2_game_play:
             ; TODO
             lda #0 ; sprites before characters (obstacles)
             sta Spr_Behind
+            ; erase all objects
+            ldx #ALL_OBJECTS-1
+-           sta Objects_X,x
+            dex
+            bpl -
             jsr draw_notext
             jmp next_state
 
@@ -687,21 +696,101 @@ draw_notext:
             rts
 
 
-draw_objects:
-            ldy #0
-            ldx #MAX_OBJ_WIDTH+10+160
+; objects come in 3 layers, with 3 different speeds, same as the trees:
+; objects1(top)=$80*2 = $100, objects2(middle)=$A0*2 = $140, objects3(bottom) = $C0*2=$180
+move_objects:
+.move_objects1:
+            lda objects1 ; hi
+            sec
+            sbc #$01
+            and #$07        ; X-scroll
+            sta objects1
+            bcs ++
+            ; shift and redraw still visible objects
+            ldy #MAX_OBJECTS-1
+-           lda Objects1_X,y
+            beq + ; empty
+            tax
+            dex ; shift
+            txa
+            sta Objects1_X,y
+            sty ZP_TEMP ; backup
+            lda Objects_ptrs,y
+            tay
             jsr draw_object
-            ldy #4
-            ldx #MAX_OBJ_WIDTH+13
-            jsr draw_object
-            ldy #9
-            ldx #MAX_OBJ_WIDTH+23+80
-            jsr draw_object
-            ldy #19
-            ldx #MAX_OBJ_WIDTH+6+80
-            jsr draw_object
-            rts
+            ldy ZP_TEMP ; restore
++           dey
+            bpl -
+++          lda objects1
+            ora #%00010000  ; Text MC + 38 columns
+            sta Scroll1
+            ; fall-through
 
+.move_objects2:
+            lda objects2+1 ; low
+            sec
+            sbc #$40
+            sta objects2+1
+            lda objects2 ; hi
+            sbc #$01
+            and #$07        ; X-scroll
+            sta objects2
+            bcs ++
+            ; shift and redraw still visible objects
+            ldy #MAX_OBJECTS-1
+-           lda Objects2_X,y
+            beq + ; empty
+            tax
+            dex ; shift
+            txa
+            cmp #80
+            bne +++
+            lda #0 ; force empty
++++         sta Objects2_X,y
+            sty ZP_TEMP ; backup
+            lda Objects_ptrs+MAX_OBJECTS,y
+            tay
+            jsr draw_object
+            ldy ZP_TEMP ; restore
++           dey
+            bpl -
+++          lda objects2
+            ora #%00010000  ; Text MC + 38 columns
+            sta Scroll2
+            ; fall-through
+
+.move_objects3:
+            lda objects3+1 ; low
+            sec
+            sbc #$80
+            sta objects3+1
+            lda objects3 ; hi
+            sbc #$01
+            and #$07        ; X-scroll
+            sta objects3
+            bcs ++
+            ; shift and redraw still visible objects
+            ldy #MAX_OBJECTS-1
+-           lda Objects3_X,y
+            beq + ; empty
+            tax
+            dex ; shift
+            txa
+            cmp #160
+            bne +++
+            lda #0 ; force empty
++++         sta Objects3_X,y
+            sty ZP_TEMP ; backup
+            lda Objects_ptrs+MAX_OBJECTS*2,y
+            tay
+            jsr draw_object
+            ldy ZP_TEMP ; restore
++           dey
+            bpl -
+++          lda objects3
+            ora #%00010000  ; Text MC + 38 columns
+            sta Scroll3
+            rts
 
 SCROLL1Y=15
 MAX_OBJ_WIDTH=10
@@ -1139,6 +1228,28 @@ Sprites_speed:
 plants:
             !byte 0,0
 
+; X-offset of objects 8.8 fixed point .8 is sub-pixels speed, lowest 3 bits is X-scroll, highest 5 is char scroll
+; scroll speeds are the same as the trees: $80*2=$100, $A0*2=$140, $C0*2=$180
+objects1:   !byte 0,0
+objects2:   !byte 0,0
+objects3:   !byte 0,0
+
+; screen location of object (0=empty)
+MAX_OBJECTS=4 ; max objects per row
+Objects_X:
+Objects1_X: ; top row
+            !fill MAX_OBJECTS,0
+Objects2_X: ; middle row
+            !fill MAX_OBJECTS,0
+Objects3_X: ; bottom row
+            !fill MAX_OBJECTS,0
+Objects_end:
+ALL_OBJECTS = Objects_end - Objects_X
+
+; object image
+Objects_ptrs:
+            !fill ALL_OBJECTS,0
+
 
 ;----------------------------------------------------------------------------
 ; CONSTANTS
@@ -1259,8 +1370,8 @@ GROUNDOBJ_STRIDE=31
 groundobj:
 ;     tree              rock                    plants                                      apple          grass         weed          bump
 ;     0     1   2   3   4       5   6   7   8   9       10  11  12  13  14  15  16  17  18  19     20  21  22    23  24  25    26  27  28    29  30
-!byte RED+8,$82,$83,$20,WHITE+8,$84,$85,$86,$20,GREEN+8,$87,$88,$89,$8a,$87,$88,$89,$8a,$20,YELLOW,147,$20,GREEN,148,$20,BLACK,149,$20,BLACK,150,$20
-!byte     0,$8b,$8c,$20,      0,$8d,$8e,$8f,$20,      0,$90,$91,$92,$91,$92,$91,$92,$90,$20,     0,$20,$20,    0,$20,$20,    0,$20,$20,    0,$20,$20
+!byte RED+8,$82,$83,$20,WHITE+8,$84,$85,$86,$20,GREEN+8,$87,$88,$89,$8a,$87,$88,$89,$8a,$20,YELLOW,$20,$20,GREEN,$20,$20,BLACK,$20,$20,BLACK,$20,$20
+!byte     0,$8b,$8c,$20,      0,$8d,$8e,$8f,$20,    $20,$90,$91,$92,$91,$92,$91,$92,$90,$20,   $20,147,$20,  $20,148,$20,  $20,149,$20,  $20,150,$40
 
 
 ;256 bytes table to determine if object character should be clipped. 0 means clipped
