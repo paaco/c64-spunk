@@ -122,11 +122,19 @@ song_loop:
         !byte <pattern1
         !byte <pattern1
         !byte <pattern1
-        !byte <pattern1
+        !byte <pattern1_brk
         !byte <pattern2
         !byte <pattern2
         !byte <pattern2
+        !byte <pattern2_brk
         !byte <pattern2
+        !byte <pattern2
+        !byte <pattern2
+        !byte <pattern2_brk
+        !byte <pattern2
+        !byte <pattern2
+        !byte <pattern2_brk
+        !byte <pattern1_brk
         !byte 0 ; end
 
 
@@ -198,6 +206,7 @@ SNARE = instr4-instruments
         !align 255,0,0
 
 L8=8*6
+L6=6*6
 L4=4*6
 L3=3*6
 L2=2*6
@@ -207,15 +216,21 @@ L1=1*6
 pattern_e:
         !byte 0
 
-pattern0:
+pattern0: ; 32
         !byte L4,<DRUM1,L4,<DRUM1,L8,<DRUM1
         !byte L4,<DRUM1,L4,<DRUM1,L8,<DRUM1
         !byte 0
-pattern1:
+pattern1: ; 32
         !byte L3,<DRUM1,L1,<DRUM2,L2,<DRUM2,L2,<DRUM2,L8,<DRUM1
         !byte L3,<DRUM1,L1,<DRUM2,L2,<DRUM2,L2,<DRUM2,L4,<DRUM1,L4,<DRUM2
         !byte 0
-pattern2:
-        !byte L3,<DRUM1,L1,<DRUM2,L2,<SNARE,L2,<DRUM2,L8,<DRUM1
+pattern1_brk: ; 16
+        !byte L3,<DRUM1,L1,<DRUM2,L2,<DRUM2,L2,<DRUM2,L2,<DRUM1,L2,<SNARE,L2,<SNARE,L2,<SNARE
+        !byte 0
+pattern2: ; 32
+        !byte L3,<DRUM1,L1,<DRUM2,L2,<SNARE,L2,<DRUM2,L6,<DRUM1,L2,<DRUM1
         !byte L3,<DRUM1,L1,<DRUM2,L2,<SNARE,L2,<DRUM2,L4,<DRUM1,L4,<DRUM2
+        !byte 0
+pattern2_brk: ; 16
+        !byte L3,<DRUM1,L1,<DRUM2,L2,<SNARE,L2,<DRUM2,L3,<DRUM1,L1,<SNARE,L2,<DRUM2,L2,<SNARE
         !byte 0
