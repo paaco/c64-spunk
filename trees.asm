@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3582 bytes exomized
+; 3665 bytes exomized
 
 ; variables
 !addr {
@@ -40,6 +40,13 @@ FRAME_SPUNK_JUMP=FRAME_SPUNK_WALK+3
 ; each enemy has 2 frames
 FRAME_ENEMY0_WALK=FRAME_SPUNK_WALK+4
 
+; tree/layer speeds in 8.8 pixels
+SPEED1_TOP=$080
+SPEED2_MID=$100
+SPEED3_BOT=$180
+SPEED4_BOT=$1FF
+SPEED5_PLA=$200
+
 BLACK=0 : WHITE=1 : RED=2 : CYAN=3
 PURPLE=4 : GREEN=5 : BLUE=6 : YELLOW=7
 ORANGE=8 : BROWN=9 : LIGHT_RED=10 : DARK_GREY=11
@@ -71,10 +78,8 @@ COLOR_OBJECTS = DARK_GREY
 
 OK_its_PAL:
             ; global colors and VIC settings
-            ;lda #COLOR_BORDER   ; NOTE D020 could already be set by decruncher
+            ;lda #COLOR_BORDER   ; NOTE D020 already be set by decruncher
             ;sta $D020
-            sta ZP_SYNC ; set to 0
-            sta ZP_RNG_HIGH ; set to 0
             lda #COLOR_PLANTS_OUTLINE
             sta VIC_COL_TXT_MC2
             lda #%00011000 ; charset bits 3-1: $2000=$800 * %100; screen bits 7-4: $0400=$0400 * %0001
@@ -87,6 +92,8 @@ OK_its_PAL:
 
             ; partial cls and color setup
             ldx #0
+            stx ZP_SYNC ; set to 0
+            stx ZP_RNG_HIGH ; set to 0
 -           lda toptext,x
             sta $0400,x
             lda toptext_color,x
@@ -233,6 +240,7 @@ init_state_0_title_screen:
             ldx #0
             stx delay
             stx tree_delay
+            stx object_delay
 -           lda INIT_SPRITES_DATA,x
             sta SPRITES_DATA,x
             inx
@@ -491,7 +499,7 @@ tree_delay: !byte 0
 ; Bubble sort Y to calculate Sprites_prio from Sprites_Y_pos (highest Y gets lowest prio 0..7)
 sort_sprite_Y:
 --          ldy #0
-            sty ZP_DIDSWAP
+            ; sty ZP_DIDSWAP
 -           ldx ZP_SPRITES_IDX,y
             lda Sprites_Y_pos,x
             iny
@@ -505,11 +513,11 @@ sort_sprite_Y:
             stx ZP_SPRITES_IDX-1,y
             pla
             sta ZP_SPRITES_IDX,y
-            inc ZP_DIDSWAP
+            ; inc ZP_DIDSWAP
 .no_swap:   cpy #8-1
             bne -
-            lda ZP_DIDSWAP
-            bne --
+            ; lda ZP_DIDSWAP ---- only do single pass otherwise trees will flicker (top IRQ takes too long)
+            ; bne --
             ; now fill Sprites_prio based on ZP_SPRITES_IDX
             ldy #0
 -           ldx ZP_SPRITES_IDX,y
@@ -692,18 +700,15 @@ draw_notext:
             bne -
             rts
 
-
-; objects come in 3 layers, with 3 different speeds, same as the trees:
-; objects1(top)=$80*2 = $100, objects2(middle)=$A0*2 = $140, objects3(bottom) = $C0*2=$180
+; objects come in 3 layers with 3 different speed synced with the trees
 move_objects:
 .move_objects1:
-            ; lda objects1+1 ; low
-            ; sec
-            ; sbc #$00
-            ; sta objects1+1
-            lda objects1 ; hi
+            lda objects1+1 ; low
             sec
-            sbc #$01
+            sbc #<SPEED1_TOP
+            sta objects1+1
+            lda objects1 ; hi
+            sbc #>SPEED1_TOP
             and #$07        ; X-scroll
             sta objects1
             bcs ++
@@ -716,7 +721,7 @@ move_objects:
             txa
             sta Objects1_X,y
             sty ZP_TEMP ; backup
-            lda Objects_ptrs,y
+            lda Objects1_ptrs,y
             tay
             jsr draw_object
             ldy ZP_TEMP ; restore
@@ -726,14 +731,13 @@ move_objects:
             ora #%00010000  ; Text MC + 38 columns
             sta Scroll1
             ; fall-through
-
 .move_objects2:
             lda objects2+1 ; low
             sec
-            sbc #$40
+            sbc #<SPEED2_MID
             sta objects2+1
             lda objects2 ; hi
-            sbc #$01
+            sbc #>SPEED2_MID
             and #$07        ; X-scroll
             sta objects2
             bcs ++
@@ -749,7 +753,7 @@ move_objects:
             lda #0 ; force empty
 +++         sta Objects2_X,y
             sty ZP_TEMP ; backup
-            lda Objects_ptrs+MAX_OBJECTS,y
+            lda Objects2_ptrs,y
             tay
             jsr draw_object
             ldy ZP_TEMP ; restore
@@ -759,14 +763,13 @@ move_objects:
             ora #%00010000  ; Text MC + 38 columns
             sta Scroll2
             ; fall-through
-
 .move_objects3:
             lda objects3+1 ; low
             sec
-            sbc #$80
+            sbc #<SPEED3_BOT
             sta objects3+1
             lda objects3 ; hi
-            sbc #$01
+            sbc #>SPEED3_BOT
             and #$07        ; X-scroll
             sta objects3
             bcs ++
@@ -782,7 +785,7 @@ move_objects:
             lda #0 ; force empty
 +++         sta Objects3_X,y
             sty ZP_TEMP ; backup
-            lda Objects_ptrs+MAX_OBJECTS*2,y
+            lda Objects3_ptrs,y
             tay
             jsr draw_object
             ldy ZP_TEMP ; restore
@@ -791,11 +794,92 @@ move_objects:
 ++          lda objects3
             ora #%00010000  ; Text MC + 38 columns
             sta Scroll3
+            ; fall-through
+
+            ; if the time comes, fetch new objects
+            lda object_delay
+            beq add_object
+            dec object_delay
             rts
+
+add_object:
+            ; pick random X < MAX_OBJECTS
+            jsr random
+            and #$07 ; make sure < MAX_OBJECTS
+            tax ; x=object
+.add_object1:
+            lda Objects1_X,x
+            bne ++ ; used
+            ; check for room (bottom part of screen row)
+            ldy #2
+-           lda $0400 + SCROLL1Y*40 + 40 + 37,y
+            cmp #$20
+            bne ++ ; no room
+            dey
+            bpl -
+            lda #GROUNDOBJ_APPLE
+            cpx #0
+            beq +
+            jsr random
+            and #$07
+            tay
+            lda RANDOM_OBJECTS,y
++           sta Objects1_ptrs,x
+            lda #MAX_OBJ_WIDTH+40 ; top row init
+            sta Objects1_X,x
+++
+.add_object2:
+            lda Objects2_X,x
+            bne ++ ; used
+            ; check for room (bottom part of screen row)
+            ldy #2
+-           lda $0400 + SCROLL1Y*40 + 40 + 37 + 80,y
+            cmp #$20
+            bne ++ ; no room
+            dey
+            bpl -
+            lda #GROUNDOBJ_APPLE
+            cpx #0
+            beq +
+            jsr random
+            and #$07
+            tay
+            lda RANDOM_OBJECTS,y
++           sta Objects2_ptrs,x
+            lda #MAX_OBJ_WIDTH+40+80 ; middle row init
+            sta Objects2_X,x
+++
+.add_object3:
+            lda Objects3_X,x
+            bne ++ ; used
+            ; check for room (bottom part of screen row)
+            ldy #2
+-           lda $0400 + SCROLL1Y*40 + 40 + 37 + 160,y
+            cmp #$20
+            bne ++ ; no room
+            dey
+            bpl -
+            lda #GROUNDOBJ_APPLE
+            cpx #0
+            beq +
+            jsr random
+            and #$07
+            tay
+            lda RANDOM_OBJECTS,y
++           sta Objects3_ptrs,x
+            lda #MAX_OBJ_WIDTH+40+160 ; bottom row init
+            sta Objects3_X,x
+++
+            lda #40
+            sta object_delay
+            rts
+
+object_delay: !byte 0
+
 
 SCROLL1Y=15
 MAX_OBJ_WIDTH=10
-; x=screen offset + MAX_OBJECT_WIDTH
+; x=screen offset + MAX_OBJ_WIDTH
 ;   screen offset should be in range [0..39], [80..119] or [160..199] otherwise the object is partially clipped
 ; y=groundobj ptr 0,4,9, etc.
 draw_object:
@@ -1236,7 +1320,7 @@ objects2:   !byte 0,0
 objects3:   !byte 0,0
 
 ; screen location of object (0=empty)
-MAX_OBJECTS=4 ; max objects per row
+MAX_OBJECTS=8 ; max objects per row
 Objects_X:
 Objects1_X: ; top row
             !fill MAX_OBJECTS,0
@@ -1250,7 +1334,9 @@ ALL_OBJECTS = Objects_end - Objects_X
 ; object image
 Objects_ptrs:
             !fill ALL_OBJECTS,0
-
+Objects1_ptrs=Objects_ptrs
+Objects2_ptrs=Objects_ptrs+MAX_OBJECTS
+Objects3_ptrs=Objects_ptrs+MAX_OBJECTS*2
 
 ;----------------------------------------------------------------------------
 ; CONSTANTS
@@ -1274,7 +1360,7 @@ INIT_SPRITES_DATA:
             !byte 215,161,0,0,0,0,0,0 ; 8x Y_pos
             !byte GREEN,LIGHT_RED,0,0,0,0, 0,PURPLE ; 8x colors
             !byte SPRITE_OFFSET,SPRITE_OFFSET+20,0,0,0,0, 0,0 ; 8x pointers
-            !byte $E0,$80,0,0,0,0 ; 6x speeds
+            !byte SPEED4_BOT>>1,SPEED1_TOP>>1,0,0,0,0 ; 6x speeds
 END_SPRITES_DATA:
 
 ; 8 tree templates consisting of ptr, max-Y and speed (corresponding with levels 1,2,3 or 4)
@@ -1290,8 +1376,8 @@ TEMPLATES_Y:
             !byte 201, 191, 173
 
 TEMPLATES_SPEED:
-            !byte $E0,$C0,$C0,$A0,$80
-            !byte $C0,$C0,$A0
+            !byte SPEED4_BOT>>1,SPEED3_BOT>>1,SPEED3_BOT>>1,SPEED2_MID>>1,SPEED1_TOP>>1
+            !byte SPEED3_BOT>>1,SPEED3_BOT>>1,SPEED2_MID>>1
 
 
 ;----------------------------------------------------------------------------
@@ -1366,14 +1452,19 @@ toptext_color:
 ; DATA ground objects
 ;----------------------------------------------------------------------------
 
+GROUNDOBJ_APPLE=19
+
 ; ground objects start with a color, followed by 2 columns of data, ending with a $20 character in the lower column
 GROUNDOBJ_STRIDE=31
 groundobj:
 ;     tree              rock                    plants                                      apple          grass         weed          bump
 ;     0     1   2   3   4       5   6   7   8   9       10  11  12  13  14  15  16  17  18  19     20  21  22    23  24  25    26  27  28    29  30
 !byte RED+8,$82,$83,$20,WHITE+8,$84,$85,$86,$20,GREEN+8,$87,$88,$89,$8a,$87,$88,$89,$8a,$20,YELLOW,$20,$20,GREEN,$20,$20,BLACK,$20,$20,BLACK,$20,$20
-!byte     0,$8b,$8c,$20,      0,$8d,$8e,$8f,$20,    $20,$90,$91,$92,$91,$92,$91,$92,$90,$20,   $20,147,$20,  $20,148,$20,  $20,149,$20,  $20,150,$40
+!byte     0,$8b,$8c,$20,      0,$8d,$8e,$8f,$20,    $20,$90,$91,$92,$91,$92,$91,$92,$90,$20,   $20,147,$20,  $20,148,$20,  $20,149,$20,  $20,150,$20
 
+; 8 random groundobjs (excludes apple)
+RANDOM_OBJECTS:
+            !byte 0,4,4,9,9,22,25,28
 
 ;256 bytes table to determine if object character should be clipped. 0 means clipped
 CLIPPED:
