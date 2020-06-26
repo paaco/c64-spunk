@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3684 bytes exomized
+; 3741 bytes exomized
 
 ; variables
 !addr {
@@ -13,6 +13,7 @@ ZP_DIDSWAP = $14        ; indicates swap during bubble sort
 ZP_RNG_LOW = $15
 ZP_RNG_HIGH = $16
 ZP_TEMP = $17           ; temp buffer
+ZP_SCRPTR = $18         ; screen pointer for character collision
 ZP_SPRITES_IDX = $20    ; 8 sprite indices for sorting Y desc (depth sorting)
 Sprites_prio = $28      ; 8 sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 
@@ -40,7 +41,7 @@ FRAME_SPUNK_JUMP=FRAME_SPUNK_WALK+3
 ; each enemy has 2 frames
 FRAME_ENEMY0_WALK=FRAME_SPUNK_WALK+4
 
-; tree/layer speeds in 8.8 pixels
+; tree/lane speeds in 8.8 pixels
 SPEED1_TOP=$080
 SPEED2_MID=$100
 SPEED3_BOT=$180
@@ -581,7 +582,45 @@ anim_Spunk: dec delay
             ldx #FRAME_SPUNK_WALK
 .anim_ok:   sta delay
             stx Spunk_Ptr
-.ok3:       rts
+.ok3:       ; fall through
+
+; detect character under Spunk (WIP)
+SPUNK_PY=5
+SPUNK_PX=16
+            lda Spunk_Y
+            sec
+            sbc #TREETOPY + (SCROLL1Y-2)*8 - SPUNK_PY
+            lsr
+            lsr
+            lsr
+            tay
+            lda SCREENROWL,y
+            sta ZP_SCRPTR
+            lda SCREENROWH,y
+            sta ZP_SCRPTR+1
+
+            lda Spunk_X
+            lsr
+            lsr
+            sec
+            sbc #24/4-SPUNK_PX/8
+            tay
+
+            lda (ZP_SCRPTR),y
+            ; DEBUG
+            eor #$FF
+            sta (ZP_SCRPTR),y
+            ; /DEBUG
+            tya
+            clc
+            adc #40
+            tay
+            lda (ZP_SCRPTR),y
+            ; DEBUG
+            eor #$FF
+            sta (ZP_SCRPTR),y
+            ; /DEBUG
+            rts
 
 delay:      !byte 0
 
@@ -700,7 +739,7 @@ draw_notext:
             bne -
             rts
 
-; objects come in 3 layers with 3 different speed synced with the trees
+; objects come in 3 lanes with 3 different speed synced with the trees
 move_objects:
 .move_objects1:
             lda objects1+1 ; low
@@ -825,7 +864,7 @@ add_object:
             tay
             lda RANDOM_OBJECTS,y
 +           sta Objects1_ptrs,x
-            lda #MAX_OBJ_WIDTH+40 ; top row init
+            lda #MAX_OBJ_WIDTH+40 ; top lane init
             sta Objects1_X,x
 ++
 .add_object2:
@@ -846,7 +885,7 @@ add_object:
             tay
             lda RANDOM_OBJECTS,y
 +           sta Objects2_ptrs,x
-            lda #MAX_OBJ_WIDTH+40+80 ; middle row init
+            lda #MAX_OBJ_WIDTH+40+80 ; middle lane init
             sta Objects2_X,x
 ++
 .add_object3:
@@ -867,7 +906,7 @@ add_object:
             tay
             lda RANDOM_OBJECTS,y
 +           sta Objects3_ptrs,x
-            lda #MAX_OBJ_WIDTH+40+160 ; bottom row init
+            lda #MAX_OBJ_WIDTH+40+160 ; bottom lane init
             sta Objects3_X,x
 ++
             lda #40
@@ -1320,13 +1359,13 @@ objects2:   !byte 0,0
 objects3:   !byte 0,0
 
 ; screen location of object (0=empty)
-MAX_OBJECTS=8 ; max objects per row
+MAX_OBJECTS=8 ; max objects per lane
 Objects_X:
-Objects1_X: ; top row
+Objects1_X: ; top lane
             !fill MAX_OBJECTS,0
-Objects2_X: ; middle row
+Objects2_X: ; middle lane
             !fill MAX_OBJECTS,0
-Objects3_X: ; bottom row
+Objects3_X: ; bottom lane
             !fill MAX_OBJECTS,0
 Objects_end:
 ALL_OBJECTS = Objects_end - Objects_X
@@ -1337,6 +1376,7 @@ Objects_ptrs:
 Objects1_ptrs=Objects_ptrs
 Objects2_ptrs=Objects_ptrs+MAX_OBJECTS
 Objects3_ptrs=Objects_ptrs+MAX_OBJECTS*2
+
 
 ;----------------------------------------------------------------------------
 ; CONSTANTS
@@ -1476,6 +1516,40 @@ CLIPPED:
             !fill 40,1
             !fill 40,0
             !fill 6,0
+
+; properties for interesting objects
+GROUNDOBJ_MINPROP=$82 ; inclusive
+GROUNDOBJ_MAXPROP=$93 ; exclusive $93=147=APPLE
+OBJ_BLOCK=0
+OBJ_SLOW=1
+groundobj_prop:
+            ;     82 83 84 85 86 87 88 89 8A 8B 8C 8D 8E 8F 90 91 92; 93
+            !byte  0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1;, 3
+
+; pointers to screen for character collision
+MIN_SCREENLOC=$0400 + (SCROLL1Y-2)*40
+SCREENROWL:
+            !byte <(MIN_SCREENLOC+40*0)
+            !byte <(MIN_SCREENLOC+40*1)
+            !byte <(MIN_SCREENLOC+40*2)
+            !byte <(MIN_SCREENLOC+40*3)
+            !byte <(MIN_SCREENLOC+40*4)
+            !byte <(MIN_SCREENLOC+40*5)
+            !byte <(MIN_SCREENLOC+40*6)
+            !byte <(MIN_SCREENLOC+40*7)
+            !byte <(MIN_SCREENLOC+40*8)
+            !byte <(MIN_SCREENLOC+40*9)
+SCREENROWH:
+            !byte >(MIN_SCREENLOC+40*0)
+            !byte >(MIN_SCREENLOC+40*1)
+            !byte >(MIN_SCREENLOC+40*2)
+            !byte >(MIN_SCREENLOC+40*3)
+            !byte >(MIN_SCREENLOC+40*4)
+            !byte >(MIN_SCREENLOC+40*5)
+            !byte >(MIN_SCREENLOC+40*6)
+            !byte >(MIN_SCREENLOC+40*7)
+            !byte >(MIN_SCREENLOC+40*8)
+            !byte >(MIN_SCREENLOC+40*9)
 
 
 ;----------------------------------------------------------------------------
