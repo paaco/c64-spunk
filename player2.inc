@@ -106,13 +106,13 @@ music_play:
 ; $18 bytes SID init
 music_SID_init:
         !byte 0,0,0,0,0,0,0
-        !byte $9C,$1A,0,0,0,0,0 ; set ring-mod freq for instr3 (actually modulated by a chord arp)
         !byte 0,0,0,0,0,0,0
-        FILTER=0
+        !byte 0,0,0,0,0,0,0
+        FILTER=100
         !byte (FILTER & $F)     ; filter cutoff bits 3-0
         !byte (FILTER >> 4)     ; filter cutoff bits 11-4
-        !byte $00               ;        reso | ext v3 v2 v1
-        !byte $0F               ; V3 HP BP LP | VOL
+        !byte $F1               ;        reso | ext v3 v2 v1
+        !byte $5F               ; V3 HP BP LP | VOL
 
 
 song:
