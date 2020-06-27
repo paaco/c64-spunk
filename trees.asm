@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3786 bytes exomized -M256
+; 3853 bytes exomized -M256 -Di_perf=-1
 
 ; variables
 !addr {
@@ -64,6 +64,8 @@ COLOR_CROWN_BRANCHES = ORANGE
 COLOR_TREES_LIGHT = ORANGE
 COLOR_TREES_DARK = BLACK
 COLOR_OBJECTS = DARK_GREY
+
+DEBUG_40COL=0;%1000 ; set to %1000 to show 40 columns
 
 *=$0801
 !byte $0c,$08,$c0,$07,$9e,$20,$32,$30,$36,$32,$00,$00,$00   ; 1984 SYS 2062
@@ -498,7 +500,6 @@ add_tree:
             sta Sprites_colors,x
             lda #50 ; take at least a small break
             sta tree_delay
-            jsr score_inc ; DEBUG
             rts
 
 tree_delay: !byte 0
@@ -591,10 +592,88 @@ anim_Spunk: dec delay
             stx Spunk_Ptr
 .ok3:       ; fall through
 
-; detect character under Spunk (WIP)
-SPUNK_PY=5
-SPUNK_PX=16
+; detect character collisions
+handle_background_collision:
+.handle_spunk_collision:
+            ldx Spunk_X
             lda Spunk_Y
+            jsr get_scrptr
+            lda (ZP_SCRPTR),y
+            cmp #GROUNDOBJ_MAXPROP ; C=Z=1 equal, C=0 A is smaller, C=1 A is larger
+            bne .not_apple1
+            jsr score_inc ; destroys A and X
+            jsr destroy_apple ; destroys A and X, returns <>0
+            bne + ; always
+.not_apple1:
+            bcs +
+            sbc #GROUNDOBJ_MINPROP-1 ; -1 to account for C=0
+            bcc +
+            tax
+            lda groundobj_prop,x
+; TODO OBJ_BLOCK=0 ==> zero forward speed
+; TODO OBJ_SLOW=1 ==> halves forward speed (if there was any)
+            ; fall-through
++           tya
+            clc
+            adc #40
+            tay
+            lda (ZP_SCRPTR),y
+            cmp #GROUNDOBJ_MAXPROP ; C=Z=1 equal, C=0 A is smaller, C=1 A is larger
+            bne .not_apple2
+            jsr score_inc ; destroys A and X
+            jsr destroy_apple ; destroys A and X, returns <>0
+            bne + ; always
+.not_apple2:
+            bcs +
+            sbc #GROUNDOBJ_MINPROP-1 ; -1 to account for C=0
+            bcc +
+            tax
+            lda groundobj_prop,x
+; TODO OBJ_BLOCK=0 ==> zero forward speed
+; TODO OBJ_SLOW=1 ==> halves forward speed (if there was any)
++           ; fall-through
+
+.handle_enemy_collision:
+            ldx Enemy_X
+            lda Enemy_Y
+            jsr get_scrptr
+            lda (ZP_SCRPTR),y
+            cmp #GROUNDOBJ_MAXPROP ; C=Z=1 equal, C=0 A is smaller, C=1 A is larger
+            bne .not_apple3
+            jsr destroy_apple ; destroys A and X, returns <>0
+            bne + ; always
+.not_apple3:
+            bcs +
+            sbc #GROUNDOBJ_MINPROP-1 ; -1 to account for C=0
+            bcc +
+            tax
+            lda groundobj_prop,x
+; TODO OBJ_BLOCK=0 ==> zero forward speed
+; TODO OBJ_SLOW=1 ==> halves forward speed (if there was any)
+            ; fall-through
++           tya
+            clc
+            adc #40
+            tay
+            lda (ZP_SCRPTR),y
+            cmp #GROUNDOBJ_MAXPROP ; C=Z=1 equal, C=0 A is smaller, C=1 A is larger
+            bne .not_apple4
+            jsr destroy_apple ; destroys A and X, returns <>0
+            bne + ; always
+.not_apple4:
+            bcs +
+            sbc #GROUNDOBJ_MINPROP-1 ; -1 to account for C=0
+            bcc +
+            tax
+            lda groundobj_prop,x
+; TODO OBJ_BLOCK=0 ==> zero forward speed
+; TODO OBJ_SLOW=1 ==> halves forward speed (if there was any)
++           rts
+
+; X=x location (bits 8..1) A=Y location (150..220)
+SPUNK_PY=9
+SPUNK_PX=16
+get_scrptr:
             sec
             sbc #TREETOPY + (SCROLL1Y-2)*8 - SPUNK_PY
             lsr
@@ -605,29 +684,35 @@ SPUNK_PX=16
             sta ZP_SCRPTR
             lda SCREENROWH,y
             sta ZP_SCRPTR+1
-
-            lda Spunk_X
+            txa
             lsr
             lsr
             sec
             sbc #24/4-SPUNK_PX/8
             tay
-
-            lda (ZP_SCRPTR),y
-            ; DEBUG
-            eor #$FF
-            sta (ZP_SCRPTR),y
-            ; /DEBUG
-            tya
-            clc
-            adc #40
-            tay
-            lda (ZP_SCRPTR),y
-            ; DEBUG
-            eor #$FF
-            sta (ZP_SCRPTR),y
-            ; /DEBUG
             rts
+
+; destroy apple on screen and in object array; destroys A and X; returns <>0 in X
+destroy_apple:
+            lda #$20 ; erase directly
+            sta (ZP_SCRPTR),y
+            lda ZP_SCRPTR ; low
+            ldx #1 ; move off-screen
+            cmp #<(MIN_SCREENLOC+40*2)
+            beq +
+            cmp #<(MIN_SCREENLOC+40*3)
+            bne ++
++           stx Objects1_X
+            rts
+++          cmp #<(MIN_SCREENLOC+40*4)
+            beq +
+            cmp #<(MIN_SCREENLOC+40*5)
+            bne ++
++           stx Objects2_X
+            rts
+++          stx Objects3_X
+            rts
+
 
 delay:      !byte 0
 
@@ -774,7 +859,7 @@ move_objects:
 +           dey
             bpl -
 ++          lda objects1
-            ora #%00010000  ; Text MC + 38 columns
+            ora #%00010000+DEBUG_40COL ; Text MC + 38 columns
             sta Scroll1
             ; fall-through
 .move_objects2:
@@ -806,7 +891,7 @@ move_objects:
 +           dey
             bpl -
 ++          lda objects2
-            ora #%00010000  ; Text MC + 38 columns
+            ora #%00010000+DEBUG_40COL  ; Text MC + 38 columns
             sta Scroll2
             ; fall-through
 .move_objects3:
@@ -838,7 +923,7 @@ move_objects:
 +           dey
             bpl -
 ++          lda objects3
-            ora #%00010000  ; Text MC + 38 columns
+            ora #%00010000+DEBUG_40COL  ; Text MC + 38 columns
             sta Scroll3
             ; fall-through
 
@@ -1373,11 +1458,11 @@ SPRITES_DATA:
 ; Sprite X-positions 9.7 (87654321 0ddddddd) range: (left outside view) 0 .. 368 ($B8) (right outside view)
 Sprites_X_posH:
             !byte 0,0,0,0,0,0 ; trees
-            !byte 0 ; enemy
+Enemy_X:    !byte 0 ; enemy
 Spunk_X:    !byte 0 ; Spunk
 Sprites_X_posL:
             !byte 0,0,0,0,0,0 ; trees
-            !byte 0 ; enemy
+Enemy_XL:   !byte 0 ; enemy
 Spunk_XL:   !byte 0 ; Spunk
 
 Sprites_Y_pos:
@@ -1545,6 +1630,7 @@ toptext_color:
 ;----------------------------------------------------------------------------
 
 GROUNDOBJ_APPLE=19
+GROUNDOBJ_EMPTY=20
 
 ; ground objects start with a color, followed by 2 columns of data, ending with a $20 character in the lower column
 GROUNDOBJ_STRIDE=31
