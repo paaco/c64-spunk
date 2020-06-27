@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3741 bytes exomized
+; 3786 bytes exomized -M256
 
 ; variables
 !addr {
@@ -275,6 +275,12 @@ init_state_1_get_ready:
             jsr draw_getreadytext
             lda #100
             sta getready
+            ; reset score
+            ldx #DIGITS-1
+            lda #$30
+-           sta SCORELOC,x
+            dex
+            bpl -
             jmp next_state
 
 init_state_2_game_play:
@@ -492,6 +498,7 @@ add_tree:
             sta Sprites_colors,x
             lda #50 ; take at least a small break
             sta tree_delay
+            jsr score_inc ; DEBUG
             rts
 
 tree_delay: !byte 0
@@ -963,6 +970,51 @@ random:
         EOR ZP_RNG_HIGH
         STA ZP_RNG_HIGH ; x ^= x << 8 done
         RTS
+
+
+;---------
+; scoring
+;---------
+
+!addr SCORELOC=$0400+12
+!addr HIGHLOC=$0400+31
+DIGITS=3
+; score is 3 digits located inside "toptext"
+
+; increments score counter by 1 with wrap around
+score_inc:
+            ldx #DIGITS-1
+-           lda SCORELOC,x
+            clc
+            adc #1 ; extra points
+            cmp #$30+10 ; C=Z=1 equal, C=0 A is smaller, C=1 A is larger
+            bcc +
+            sbc #10
+            sta SCORELOC,x
+            dex
+            bpl -
++           sta SCORELOC,x
+            ; fall-through
+
+; update high score if current is higher
+score_update_high:
+            ldx #0
+-           lda SCORELOC,x
+            cmp HIGHLOC,x  ; C=Z=1 equal, C=0 A is smaller, C=1 A is larger
+            bcc +
+            bne .copy_score
+            inx
+            cpx #DIGITS
+            bne -
++           rts
+            ; copy score into high
+--          lda SCORELOC,x
+.copy_score:
+            sta HIGHLOC,x
+            inx
+            cpx #DIGITS
+            bne --
+            rts
 
 
 ;----------------------------------------------------------------------------
@@ -1555,7 +1607,7 @@ SCREENROWH:
 ;----------------------------------------------------------------------------
 ; MUSIC
 ;----------------------------------------------------------------------------
-            * = $1800
+            * = $1c00
 
             !src "player2.inc"
 

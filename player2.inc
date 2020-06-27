@@ -21,10 +21,10 @@ pat_offset = $43        ; offset in pattern
 song_offset = $44       ; offset in song
 
 
-    *= $1800
+    *= $1c00
 
-music_init:
-            jmp .music_init
+; music_init:
+;             jmp .music_init
 
 music_play:
             dec note_length
@@ -75,7 +75,6 @@ music_play:
             adc instr_off
             tax
             lda instruments+8,x
-            cmp #$FF
             beq .done
             sta SID+WF
             lda instruments+7 ; FL from instrument, not wave table
@@ -86,7 +85,7 @@ music_play:
 .done:      rts
 
 
-.music_init:
+music_init:
             ldx #$18
 -           lda music_SID_init,x
             sta SID,x
@@ -159,7 +158,7 @@ DRUM1 = instr1-instruments
         !byte $40,$05
         !byte $40,$04
         !byte $40,$05
-        !byte $FF ; stop
+        !byte 0 ; stop
 
 instr2: ; drum2
 DRUM2 = instr2-instruments
@@ -175,7 +174,7 @@ DRUM2 = instr2-instruments
         !byte $40,$05
         !byte $40,$04
         !byte $40,$05
-        !byte $FF ; stop
+        !byte 0 ; stop
 
 ; instr3: ; ring-mod-sync blip
 ; BLIP = instr3-instruments
@@ -199,7 +198,7 @@ SNARE = instr4-instruments
         !byte $80,$38
         !byte $80,$3C
         !byte $10,$0D
-        !byte $FF
+        !byte 0
 
 
 ;page align so everything is addressable by single byte pointers
