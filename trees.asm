@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3853 bytes exomized -M256 -Di_perf=-1
+; 3938 bytes exomized -M256 -Di_perf=-1
 
 ; variables
 !addr {
@@ -14,6 +14,7 @@ ZP_RNG_LOW = $15
 ZP_RNG_HIGH = $16
 ZP_TEMP = $17           ; temp buffer
 ZP_SCRPTR = $18         ; screen pointer for character collision
+ZP_HIGHSCORE = $1A      ; <>0 in case of new high score
 ZP_SPRITES_IDX = $20    ; 8 sprite indices for sorting Y desc (depth sorting)
 Sprites_prio = $28      ; 8 sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
 
@@ -35,6 +36,13 @@ VIC_SPR_COL = $D027
 ; constants
 RASTERTOP=0             ; top raster irq
 TREETOPY=50             ; first y-position of trees
+INTROTEXTY=16           ; y-position in characters for text
+GAMEOVERY=9             ; y-position in characters for game over text
+MINY=150                ; min Y for actors (incl)
+MAXY=220                ; max Y for actors (incl)
+SPUNK_PY=9              ; sprite hit box Y offset
+SPUNK_PX=16             ; sprite hit box X offset
+
 ; animation frames
 FRAME_SPUNK_WALK=SPRITE_OFFSET + (sprites_spunk-sprites)/64
 FRAME_SPUNK_JUMP=FRAME_SPUNK_WALK+3
@@ -91,7 +99,6 @@ OK_its_PAL:
             sta VIC_SPR_ENA
             sta VIC_SPR_MC
             sta $DC00       ; disconnect keyboard
-            sta ZP_GAMESTATE ; set to $FF
 
             ; partial cls and color setup
             ldx #0
@@ -212,17 +219,36 @@ loop:       lda ZP_SYNC
             jmp init_state_2_game_play
 
 +           cmp #2
-            bne state_handled
+            bne +
 
         ; game_state 2 : game play
-            ; TODO handle game states:
-            ; TODO 3.game over -> 4
             jsr move_objects
-            jsr scroll_trees_X
+            jsr scroll_sprites_X
             jsr move_Spunk
             inc plants
             inc plants
-            ; fall-through
+
+            ; if either Spunk or enemy fall off screen, it's game over
+            lda Sprites_X_posH+6
+            cmp #$B8
+            beq .game_over
+            lda Sprites_X_posH+7
+            cmp #$B8
+            bne state_handled
+.game_over: jmp init_state_3_game_over
+
++           cmp #3
+            bne state_handled
+
+        ; game_state 3 : game over
+            ; debounce fire button (wait until <>0)
+            lda $DC00           ; Joystick A in control port 2 0=active: 1=up 2=down 4=left 8=right 16=fire
+            and $DC01           ; Joystick B in control port 1 0=active: 1=up 2=down 4=left 8=right 16=fire
+            and #%00010000      ; ignore other bits not from the joystick
+            beq state_handled ;pressed
+            dec getready
+            bne state_handled
+            jmp init_state_0_title_screen
 
 state_handled:
             jsr draw_plants
@@ -239,6 +265,7 @@ init_state_0_title_screen:
             sta Scroll2
             sta Scroll3
             lda #%11111111 ; sprites behind text
+            sta ZP_GAMESTATE ; set to $FF
             sta Spr_Behind
             ldx #0
             stx delay
@@ -268,7 +295,15 @@ init_state_0_title_screen:
             jsr reset_Spunk
             jsr draw_distant_background
             jsr draw_logo
-            jsr draw_introtext
+            jsr draw_notext
+            ; draw_introtext
+            ldx #introtext_end-introtext-1
+-           lda introtext,x
+            sta $0400+INTROTEXTY*40,x
+            lda #CYAN
+            sta $D800+INTROTEXTY*40,x
+            dex
+            bne -
 next_state: inc ZP_GAMESTATE
             jmp state_handled
 
@@ -286,15 +321,21 @@ init_state_1_get_ready:
             jmp next_state
 
 init_state_2_game_play:
-            ; TODO
             lda #0 ; sprites before characters (obstacles)
             sta Spr_Behind
+            sta ZP_HIGHSCORE ; no new high score
             ; erase all objects
             ldx #ALL_OBJECTS-1
 -           sta Objects_X,x
             dex
             bpl -
             jsr draw_notext
+            jmp next_state
+
+init_state_3_game_over:
+            jsr draw_gameovertext
+            lda #100
+            sta getready
             jmp next_state
 
 getready:   !byte 0
@@ -450,8 +491,8 @@ update_sprite_data:
             bne -
             rts
 
-; apply speed to tree sprites
-scroll_trees_X:
+; apply speed to sprites
+scroll_sprites_X:
             ldx #0
 -           lda Sprites_X_posL,x
             sec
@@ -467,7 +508,7 @@ scroll_trees_X:
             lda #$B8
             sta Sprites_X_posH,x
 +           inx
-            cpx #6
+            cpx #8 ; also includes actors
             bne -
             ; if the time comes, fetch a new tree
             lda tree_delay
@@ -491,7 +532,8 @@ add_tree:
             sta Sprites_ptrs,x
             lda TEMPLATES_Y,y
             sta Sprites_Y_pos,x
-            lda TEMPLATES_SPEED,y
+            tay
+            lda Y_TO_SPEED,y
             sta Sprites_speed,x
             jsr random
             and #$07
@@ -550,9 +592,9 @@ move_Spunk:
             lda Spunk_Y
             sec
             sbc #$02
-            cmp #150
+            cmp #MINY
             bcs .ok
-            lda #150
+            lda #MINY
 .ok:        sta Spunk_Y
 +           tya
             and #$02
@@ -561,9 +603,9 @@ move_Spunk:
             lda Spunk_Y
             clc
             adc #$02
-            cmp #220
+            cmp #MAXY
             bcc .ok2
-            lda #220
+            lda #MAXY
 .ok2:       sta Spunk_Y
 +           tya
             and #$10
@@ -595,85 +637,28 @@ anim_Spunk: dec delay
 ; detect character collisions
 handle_background_collision:
 .handle_spunk_collision:
+            lda #0
+            sta ZP_TEMP
             ldx Spunk_X
             lda Spunk_Y
-            jsr get_scrptr
-            lda (ZP_SCRPTR),y
-            cmp #GROUNDOBJ_MAXPROP ; C=Z=1 equal, C=0 A is smaller, C=1 A is larger
-            bne .not_apple1
-            jsr score_inc ; destroys A and X
-            jsr destroy_apple ; destroys A and X, returns <>0
-            bne + ; always
-.not_apple1:
-            bcs +
-            sbc #GROUNDOBJ_MINPROP-1 ; -1 to account for C=0
-            bcc +
-            tax
-            lda groundobj_prop,x
-; TODO OBJ_BLOCK=0 ==> zero forward speed
-; TODO OBJ_SLOW=1 ==> halves forward speed (if there was any)
-            ; fall-through
-+           tya
-            clc
-            adc #40
             tay
-            lda (ZP_SCRPTR),y
-            cmp #GROUNDOBJ_MAXPROP ; C=Z=1 equal, C=0 A is smaller, C=1 A is larger
-            bne .not_apple2
-            jsr score_inc ; destroys A and X
-            jsr destroy_apple ; destroys A and X, returns <>0
-            bne + ; always
-.not_apple2:
-            bcs +
-            sbc #GROUNDOBJ_MINPROP-1 ; -1 to account for C=0
-            bcc +
-            tax
-            lda groundobj_prop,x
-; TODO OBJ_BLOCK=0 ==> zero forward speed
-; TODO OBJ_SLOW=1 ==> halves forward speed (if there was any)
-+           ; fall-through
-
+            lda Y_TO_SPEED,y
+            sta Sprites_speed+7
+            jsr handle_double_hitbox
+            ; TODO sta Sprites_speed+7
 .handle_enemy_collision:
+            inc ZP_TEMP
             ldx Enemy_X
             lda Enemy_Y
-            jsr get_scrptr
-            lda (ZP_SCRPTR),y
-            cmp #GROUNDOBJ_MAXPROP ; C=Z=1 equal, C=0 A is smaller, C=1 A is larger
-            bne .not_apple3
-            jsr destroy_apple ; destroys A and X, returns <>0
-            bne + ; always
-.not_apple3:
-            bcs +
-            sbc #GROUNDOBJ_MINPROP-1 ; -1 to account for C=0
-            bcc +
-            tax
-            lda groundobj_prop,x
-; TODO OBJ_BLOCK=0 ==> zero forward speed
-; TODO OBJ_SLOW=1 ==> halves forward speed (if there was any)
-            ; fall-through
-+           tya
-            clc
-            adc #40
             tay
-            lda (ZP_SCRPTR),y
-            cmp #GROUNDOBJ_MAXPROP ; C=Z=1 equal, C=0 A is smaller, C=1 A is larger
-            bne .not_apple4
-            jsr destroy_apple ; destroys A and X, returns <>0
-            bne + ; always
-.not_apple4:
-            bcs +
-            sbc #GROUNDOBJ_MINPROP-1 ; -1 to account for C=0
-            bcc +
-            tax
-            lda groundobj_prop,x
-; TODO OBJ_BLOCK=0 ==> zero forward speed
-; TODO OBJ_SLOW=1 ==> halves forward speed (if there was any)
-+           rts
+            lda Y_TO_SPEED,y
+            ;sta Sprites_speed+6 ; DEBUG disabled otherwise you die too soon
+            jsr handle_double_hitbox
+            ; TODO sta Sprites_speed+6
+            rts
 
 ; X=x location (bits 8..1) A=Y location (150..220)
-SPUNK_PY=9
-SPUNK_PX=16
-get_scrptr:
+handle_double_hitbox:
             sec
             sbc #TREETOPY + (SCROLL1Y-2)*8 - SPUNK_PY
             lsr
@@ -690,7 +675,31 @@ get_scrptr:
             sec
             sbc #24/4-SPUNK_PX/8
             tay
+            jsr handle_collision
+            ; check second row
+            tya
+            clc
+            adc #40
+            tay
+            ; fall-through
+
+handle_collision:
+            lda (ZP_SCRPTR),y
+            cmp #GROUNDOBJ_MAXPROP ; C=Z=1 equal, C=0 A is smaller, C=1 A is larger
+            beq .apple
+            bcs .not_interesting
+            sbc #GROUNDOBJ_MINPROP-1 ; -1 to account for C=0
+            bcc .not_interesting
+            tax
+            lda groundobj_prop,x
+; TODO OBJ_BLOCK=0 ==> zero forward speed
+; TODO OBJ_SLOW=1 ==> halves forward speed (if there was any)
+.not_interesting:
             rts
+.apple:     lda ZP_TEMP ; 0=Spunk 1=enemy
+            bne destroy_apple
+            jsr score_inc ; destroys A and X TODO only SPUNK
+            ; fall-through
 
 ; destroy apple on screen and in object array; destroys A and X; returns <>0 in X
 destroy_apple:
@@ -712,7 +721,6 @@ destroy_apple:
             rts
 ++          stx Objects3_X
             rts
-
 
 delay:      !byte 0
 
@@ -759,22 +767,16 @@ draw_plants:
 ; distant trees in the background
 draw_distant_background:
             ldx #0
-            lda #$20
--           sta $0400+40,x
-            inx
-            cpx #40
-            bne -
-            ldx #0
 -           lda distant,x
-            sta $0400+40*2,x
+            sta $0400+40*1,x
             lda distant+$100,x
-            sta $0500+40*2,x
-            lda distant+520-256,x
-            sta $0400+520-256+40*2,x
+            sta $0500+40*1,x
+            lda distant+560-256,x
+            sta $0400+560-256+40*1,x
             lda #8 ; only the MC part matters
             sta $D800+40*2,x
             sta $D900+40*2,x
-            sta $D800+520-256+40*2,x
+            sta $D800+560-256+40*1,x
             inx
             bne -
             rts
@@ -799,19 +801,6 @@ draw_logo:
             bne -
             rts
 
-; introtext
-draw_introtext:
-            INTROTEXTY=16
-            ldx #introtext_end-introtext-1
--           lda introtext,x
-            sta $0400+INTROTEXTY*40,x
-            lda #CYAN
-            sta $D800+INTROTEXTY*40,x
-            dex
-            bne -
-            rts
-
-; getreadytext
 draw_getreadytext:
             ldx #getreadytext_end-getreadytext-1
 -           lda getreadytext,x
@@ -822,14 +811,34 @@ draw_getreadytext:
             bne -
             rts
 
-; notext
 draw_notext:
             ldx #0
             lda #$20
--           sta $0400+INTROTEXTY*40,x
+-           sta $0400+INTROTEXTY*40-40,x
+            sta $0400+INTROTEXTY*40,x
             inx
             bne -
             rts
+
+draw_gameovertext:
+            ldx #gameovertext_end-gameovertext-1
+-           lda gameovertext,x
+            sta $0400+GAMEOVERY*40+15,x
+            lda #WHITE
+            sta $D800+GAMEOVERY*40+15,x
+            dex
+            bne -
+            ; also draw new high score
+            lda ZP_HIGHSCORE
+            beq +
+            ldx #6+DIGITS
+-           lda HIGHLOC-6,x
+            sta $0400+GAMEOVERY*40+80+15,x
+            lda #WHITE
+            sta $D800+GAMEOVERY*40+80+15,x
+            dex
+            bpl -
++           rts
 
 ; objects come in 3 lanes with 3 different speed synced with the trees
 move_objects:
@@ -1099,6 +1108,7 @@ score_update_high:
             inx
             cpx #DIGITS
             bne --
+            stx ZP_HIGHSCORE
             rts
 
 
@@ -1482,6 +1492,8 @@ Spunk_Ptr:  !byte 0
 
 Sprites_speed:
             !byte 0,0,0,0,0,0 ; trees
+            !byte 0 ; enemy
+            !byte 0 ; Spunk
 
 
 ; X-offset of plants 8.8 fixed point .8 is sub-pixels speed, lowest 3 bits is X-scroll, highest 5 is char scroll (mod 11)
@@ -1537,7 +1549,7 @@ INIT_SPRITES_DATA:
             !byte 215,161,0,0,0,0,0,0 ; 8x Y_pos
             !byte GREEN,LIGHT_RED,0,0,0,0, 0,PURPLE ; 8x colors
             !byte SPRITE_OFFSET,SPRITE_OFFSET+20,0,0,0,0, 0,0 ; 8x pointers
-            !byte SPEED4_BOT>>1,SPEED1_TOP>>1,0,0,0,0 ; 6x speeds
+            !byte SPEED4_BOT>>1,SPEED1_TOP>>1,0,0,0,0,0,0 ; 8x speeds
 END_SPRITES_DATA:
 
 ; 8 tree templates consisting of ptr, max-Y and speed (corresponding with levels 1,2,3 or 4)
@@ -1547,21 +1559,24 @@ TEMPLATES_PTR:
             !byte SPRITE_OFFSET, SPRITE_OFFSET+5, SPRITE_OFFSET+10, SPRITE_OFFSET+15, SPRITE_OFFSET+20
             !byte SPRITE_OFFSET+5, SPRITE_OFFSET+10, SPRITE_OFFSET+15
 
-; Y-positions used for depth sorting
+; tree ending Y-positions used for depth sorting
 TEMPLATES_Y:
             !byte 215, 201, 191, 173, 161
             !byte 201, 191, 173
 
-TEMPLATES_SPEED:
-            !byte SPEED4_BOT>>1,SPEED3_BOT>>1,SPEED3_BOT>>1,SPEED2_MID>>1,SPEED1_TOP>>1
-            !byte SPEED3_BOT>>1,SPEED3_BOT>>1,SPEED2_MID>>1
-
+; speeds from 0 to MAXY(220) 70 bytes
+Y_TO_SPEED:
+            !fill 150,SPEED1_TOP>>1
+            !fill 20,SPEED1_TOP>>1 ; MINY
+            !fill 16,SPEED2_MID>>1
+            !fill 35,SPEED3_BOT>>1
 
 ;----------------------------------------------------------------------------
 ; DATA distant background
 ;----------------------------------------------------------------------------
 
 distant:
+!fill 40,$20 ; space row
 ; Sprite2asm trees-distant-ch40-mc0f.png 24 jun. 2020 14:28:36
 ; charmap 560 bytes (40 x 14) hacked 40x12 520
 !byte $42,$41,$42,$41,$42,$41,$42,$41,$40,$42,$41,$42,$41,$43,$40,$42,$41,$42,$41,$42,$41,$42,$41,$44,$40,$42,$41,$42,$41,$40,$40,$42,$41,$42,$41,$42,$41,$42,$41,$40
@@ -1623,6 +1638,10 @@ toptext: ; 147=apple
 !scr "     score ",147,"000          high ",147,"000      "
 toptext_color:
 !scr "aaaaaaaaaaagaaaaaaaaaaaaaaaaaagaaaaaaaaa"
+
+gameovertext:
+!scr "game over!"
+gameovertext_end:
 
 
 ;----------------------------------------------------------------------------
