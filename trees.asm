@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3940 bytes exomized -M254 -Di_perf=-1
+; 4038 bytes exomized -M256 -Di_perf=-1
 
 ; variables
 !addr {
@@ -25,6 +25,9 @@ object_delay = $32
 getready = $33
 enemy_y_delta = $34     ; $01=down $FF=up
 enemy_timer = $35       ; random delay to change direction
+energy = $36            ; energy burst
+sleep_init = $38         ; reinit sleep counter
+sleep_timer = $37       ; sleep countdown
 
 SPRITE_PTR = $07F8
 
@@ -50,7 +53,11 @@ MINY=150                ; min Y for actors (incl)
 MAXY=220                ; max Y for actors (incl)
 SPUNK_PY=9              ; sprite hit box Y offset
 SPUNK_PX=16             ; sprite hit box X offset
-ENEMY_WANTS_X = 100     ; x-position/2 enemy AI wants to move to
+ENEMY_WANTS_X = 100     ; max x-position/2 enemy AI wants to move to
+SPUNK_WANTS_X = 100     ; max x-position/2 Spunk can move to
+MAX_ENERGY = 200        ; energy length
+MIN_SLEEP = 30          ; minimal sleep (increases per try) it's game over at approx 150
+SLEEP_INC = 1           ; sleep increase after burst
 
 ; animation frames
 FRAME_SPUNK_WALK=SPRITE_OFFSET + (sprites_spunk-sprites)/64
@@ -301,7 +308,7 @@ init_state_0_title_screen:
             lda #190
             sta Spunk_Y
             jsr music_init
-            ;jsr reset_Spunk DEBUG
+            jsr reset_Spunk
             jsr draw_distant_background
             jsr draw_logo
             jsr draw_notext
@@ -321,6 +328,10 @@ init_state_1_get_ready:
             jsr draw_getreadytext
             lda #100
             sta getready
+            lda #MAX_ENERGY
+            sta energy
+            lda #MIN_SLEEP
+            sta sleep_init
             ; reset score
             ldx #DIGITS-1
             lda #$30
@@ -348,7 +359,7 @@ init_state_3_game_over:
             sta getready
             jmp next_state
 
-;getready:   !byte 0
+;getready:   !byte 0 ; moved to ZP
 
 
 ;----------------
@@ -602,7 +613,6 @@ move_actors:
             lda Y_TO_SPEED,y
             ; A=full speed
             ldx ZP_SPEED ; >1 OK, 1=SLOW, 0=BLOCKED
-            stx $0400 ; DEBUG
             beq .ai_blocked
 .ai_move_X: ldy Enemy_X
             cpy #ENEMY_WANTS_X ; C=Z=1 equal, C=0 Y is smaller, C=1 Y is larger
@@ -642,6 +652,85 @@ move_actors:
 +           sta Enemy_Y
             ; fall-through
 
+.move_Spunk:
+            dec ZP_IS_SPUNK
+            ldx Spunk_X
+            lda Spunk_Y
+            jsr handle_hitbox ; handles apple and determines speed modifier
+            ldy Spunk_Y
+            lda Y_TO_SPEED,y
+            sta Spunk_speed
+            ldx energy
+            bne .energy
+            dec sleep_timer
+            bne .no_energy
+            lda #MAX_ENERGY
+            sta energy
+.energy:
+            lda $DC00           ; Joystick A in control port 2 0=active: 1=up 2=down 4=left 8=right 16=fire
+            and $DC01           ; Joystick B in control port 1 0=active: 1=up 2=down 4=left 8=right 16=fire
+            and #%00011111      ; ignore other bits not from the joystick
+            tay ; backup
+            and #$10
+            bne .spunk_no_FIRE
+            tya
+            and #$01
+            bne .spunk_no_UP
+            ; UP
+            lda Spunk_Y
+            sec
+            sbc #$02
+            cmp #MINY
+            bcs +
+            lda #MINY
++           sta Spunk_Y
+.spunk_no_UP:
+            tya
+            and #$02
+            bne .spunk_no_DOWN
+            ; DOWN
+            lda Spunk_Y
+            clc
+            adc #$02
+            cmp #MAXY
+            bcc +
+            lda #MAXY
++           sta Spunk_Y
+.spunk_no_DOWN:
+            ; decrease energy only if used
+            dec energy
+            bne +
+            lda sleep_init
+            sta sleep_timer
+            clc
+            adc #SLEEP_INC
+            sta sleep_init
+            ; TODO init with FRAME_SPUNK_JUMP after sleep
+            ; handle forward motion
++           ldy Spunk_Y
+            lda Y_TO_SPEED,y
+            ; A=full speed
+            ldx ZP_SPEED ; >1 OK, 1=SLOW, 0=BLOCKED
+            beq .sp_blocked
+            ldy Spunk_X
+            cpy #SPUNK_WANTS_X ; C=Z=1 equal, C=0 Y is smaller, C=1 Y is larger
+            bcs .sp_blocked ; don't move
+            ; spunk advances to position
+            cpx #1 ; SLOW
+            beq .sp_slow
+            ; normal move
+            lsr ; half speed; leaves C=0 because Y_TO_SPEED is either 40,80 or C0
+            adc Spunk_XL
+            sta Spunk_XL
+            bcc +
+            inc Spunk_X
++           lda #0 ; no scroll speed
+.sp_slow:   lsr
+.sp_blocked:sta Spunk_speed
+.no_energy:
+.spunk_no_FIRE:
+            ; fall-through
+
 animate_sprites:
             dec delay
             bpl .no_anim
@@ -649,61 +738,17 @@ animate_sprites:
             lda Enemy_Ptr
             eor #1
             sta Enemy_Ptr
-            ; TODO only animate Spunk when moving
-            lda #4  ; delay
+            lda energy
+            beq reset_Spunk
+            ldx Spunk_Ptr
+            inx
+            cpx #FRAME_SPUNK_JUMP
+            bne +
+reset_Spunk:ldx #FRAME_SPUNK_WALK
++           lda #4  ; delay
             sta delay
+            stx Spunk_Ptr
 .no_anim:   rts
-
-;             lda $DC00           ; Joystick A in control port 2 0=active: 1=up 2=down 4=left 8=right 16=fire
-;             and $DC01           ; Joystick B in control port 1 0=active: 1=up 2=down 4=left 8=right 16=fire
-;             and #%00011111      ; ignore other bits not from the joystick
-;             tay ; backup
-;             and #$01
-;             bne +
-;             ; UP
-;             lda Spunk_Y
-;             sec
-;             sbc #$02
-;             cmp #MINY
-;             bcs .ok
-;             lda #MINY
-; .ok:        sta Spunk_Y
-; +           tya
-;             and #$02
-;             bne +
-;             ; DOWN
-;             lda Spunk_Y
-;             clc
-;             adc #$02
-;             cmp #MAXY
-;             bcc .ok2
-;             lda #MAXY
-; .ok2:       sta Spunk_Y
-; +           tya
-;             and #$10
-;             bne +
-;             ; FIRE
-;             inc Spunk_X ; DEBUG
-; +           cpy #%00011111
-;             bne anim_Spunk
-;             ; reset anim frame
-; reset_Spunk:ldx #FRAME_SPUNK_WALK
-;             lda #0
-;             beq .anim_ok ; jmp always
-; anim_Spunk: dec delay
-;             bpl .ok3
-;             ; animate enemy always
-;             lda Enemy_Ptr
-;             eor #1
-;             sta Enemy_Ptr
-;             lda #4  ; delay
-;             ldx Spunk_Ptr
-;             inx
-;             cpx #FRAME_SPUNK_JUMP
-;             bne .anim_ok
-;             ldx #FRAME_SPUNK_WALK
-; .anim_ok:   sta delay
-;             stx Spunk_Ptr
 
 ; X=x location (bits 8..1) A=Y location (150..220)
 ; returns calculated speed in ZP_SPEED: >1=OK, 1=SLOW, 0=BLOCK
@@ -1673,9 +1718,9 @@ introtext:
 !scr "          press fire to start!          "
 !scr "                                        "
 !scr "                                        "
-!scr "      (c) 2020 twa",129,"n pa",129,"n software     "
+!scr "      by alexander ",34,"paaco",34," paalvast     "
 !scr "                                        "
-!scr "    written by alex ",34,"paaco",34," paalvast    "
+!scr "      (c) 2020 twa",129,"n pa",129,"n software      "
 introtext_end:
 
 getreadytext:
