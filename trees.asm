@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 3938 bytes exomized -M256 -Di_perf=-1
+; 3940 bytes exomized -M254 -Di_perf=-1
 
 ; variables
 !addr {
@@ -13,10 +13,18 @@ ZP_DIDSWAP = $14        ; indicates swap during bubble sort
 ZP_RNG_LOW = $15
 ZP_RNG_HIGH = $16
 ZP_TEMP = $17           ; temp buffer
+ZP_IS_SPUNK = $17       ; also ZP_TEMP just a different name
 ZP_SCRPTR = $18         ; screen pointer for character collision
 ZP_HIGHSCORE = $1A      ; <>0 in case of new high score
+ZP_SPEED = $1B          ; bitmask for calculated X speed: %11=forward, %01=slow, %00=blocked
 ZP_SPRITES_IDX = $20    ; 8 sprite indices for sorting Y desc (depth sorting)
 Sprites_prio = $28      ; 8 sprite prios (0 means $D000 sprite, 1 means $D002 sprite etc.)
+delay = $30
+tree_delay = $31
+object_delay = $32
+getready = $33
+enemy_y_delta = $34     ; $01=down $FF=up
+enemy_timer = $35       ; random delay to change direction
 
 SPRITE_PTR = $07F8
 
@@ -42,6 +50,7 @@ MINY=150                ; min Y for actors (incl)
 MAXY=220                ; max Y for actors (incl)
 SPUNK_PY=9              ; sprite hit box Y offset
 SPUNK_PX=16             ; sprite hit box X offset
+ENEMY_WANTS_X = 100     ; x-position/2 enemy AI wants to move to
 
 ; animation frames
 FRAME_SPUNK_WALK=SPRITE_OFFSET + (sprites_spunk-sprites)/64
@@ -212,7 +221,7 @@ loop:       lda ZP_SYNC
             bne +
 
         ; game_state 1 : get ready
-            jsr anim_Spunk
+            jsr animate_sprites
             ; wait a few seconds
             dec getready
             bne state_handled
@@ -224,7 +233,7 @@ loop:       lda ZP_SYNC
         ; game_state 2 : game play
             jsr move_objects
             jsr scroll_sprites_X
-            jsr move_Spunk
+            jsr move_actors
             inc plants
             inc plants
 
@@ -292,7 +301,7 @@ init_state_0_title_screen:
             lda #190
             sta Spunk_Y
             jsr music_init
-            jsr reset_Spunk
+            ;jsr reset_Spunk DEBUG
             jsr draw_distant_background
             jsr draw_logo
             jsr draw_notext
@@ -324,6 +333,7 @@ init_state_2_game_play:
             lda #0 ; sprites before characters (obstacles)
             sta Spr_Behind
             sta ZP_HIGHSCORE ; no new high score
+            sta enemy_timer
             ; erase all objects
             ldx #ALL_OBJECTS-1
 -           sta Objects_X,x
@@ -338,7 +348,7 @@ init_state_3_game_over:
             sta getready
             jmp next_state
 
-getready:   !byte 0
+;getready:   !byte 0
 
 
 ;----------------
@@ -544,7 +554,7 @@ add_tree:
             sta tree_delay
             rts
 
-tree_delay: !byte 0
+;tree_delay: !byte 0 ; moved to ZP
 
 
 ; Bubble sort Y to calculate Sprites_prio from Sprites_Y_pos (highest Y gets lowest prio 0..7)
@@ -580,85 +590,126 @@ sort_sprite_Y:
             rts
 
 
-; move Spunk based on joystick
-move_Spunk:
-            lda $DC00           ; Joystick A in control port 2 0=active: 1=up 2=down 4=left 8=right 16=fire
-            and $DC01           ; Joystick B in control port 1 0=active: 1=up 2=down 4=left 8=right 16=fire
-            and #%00011111      ; ignore other bits not from the joystick
-            tay ; backup
-            and #$01
-            bne +
-            ; UP
-            lda Spunk_Y
-            sec
-            sbc #$02
-            cmp #MINY
-            bcs .ok
-            lda #MINY
-.ok:        sta Spunk_Y
-+           tya
-            and #$02
-            bne +
-            ; DOWN
-            lda Spunk_Y
+; move actors: enemy AI and Spunk based on joystick
+move_actors:
+.enemy_ai:
+            lda #1 ; NOT SPUNK so apples don't score
+            sta ZP_IS_SPUNK
+            ldx Enemy_X
+            lda Enemy_Y
+            jsr handle_hitbox ; handles apple and determines speed modifier
+            ldy Enemy_Y
+            lda Y_TO_SPEED,y
+            ; A=full speed
+            ldx ZP_SPEED ; >1 OK, 1=SLOW, 0=BLOCKED
+            stx $0400 ; DEBUG
+            beq .ai_blocked
+.ai_move_X: ldy Enemy_X
+            cpy #ENEMY_WANTS_X ; C=Z=1 equal, C=0 Y is smaller, C=1 Y is larger
+            bcs .ai_blocked ; don't move
+            ; enemy advances to position
+            cpx #1 ; SLOW
+            beq .ai_slow
+            ; normal move
+            lsr ; half speed; leaves C=0 because Y_TO_SPEED is either 40,80 or C0
+            adc Enemy_XL
+            sta Enemy_XL
+            bcc +
+            inc Enemy_X
++           lda #0 ; no scroll speed
+.ai_slow:   lsr
+.ai_blocked:sta Enemy_speed
+.ai_move_Y: ; move up or down
+            dec enemy_timer
+            bpl .ai_do_Y
+            ; new direction
+            jsr random
+            and #$1f
+            sta enemy_timer
+            and #$07
+            tax
+            lda SPEED_AI_Y,x
+            sta enemy_y_delta
+.ai_do_Y:   lda Enemy_Y
             clc
-            adc #$02
-            cmp #MAXY
-            bcc .ok2
+            adc enemy_y_delta
+            cmp #MINY
+            bcs +
+            lda #MINY
++           cmp #MAXY
+            bcc +
             lda #MAXY
-.ok2:       sta Spunk_Y
-+           tya
-            and #$10
-            bne +
-            ; FIRE
-            inc Spunk_X ; DEBUG
-+           cpy #%00011111
-            bne anim_Spunk
-            ; reset anim frame
-reset_Spunk:ldx #FRAME_SPUNK_WALK
-            lda #0
-            beq .anim_ok ; jmp always
-anim_Spunk: dec delay
-            bpl .ok3
++           sta Enemy_Y
+            ; fall-through
+
+animate_sprites:
+            dec delay
+            bpl .no_anim
             ; animate enemy always
             lda Enemy_Ptr
             eor #1
             sta Enemy_Ptr
+            ; TODO only animate Spunk when moving
             lda #4  ; delay
-            ldx Spunk_Ptr
-            inx
-            cpx #FRAME_SPUNK_JUMP
-            bne .anim_ok
-            ldx #FRAME_SPUNK_WALK
-.anim_ok:   sta delay
-            stx Spunk_Ptr
-.ok3:       ; fall through
+            sta delay
+.no_anim:   rts
 
-; detect character collisions
-handle_background_collision:
-.handle_spunk_collision:
-            lda #0
-            sta ZP_TEMP
-            ldx Spunk_X
-            lda Spunk_Y
-            tay
-            lda Y_TO_SPEED,y
-            sta Sprites_speed+7
-            jsr handle_double_hitbox
-            ; TODO sta Sprites_speed+7
-.handle_enemy_collision:
-            inc ZP_TEMP
-            ldx Enemy_X
-            lda Enemy_Y
-            tay
-            lda Y_TO_SPEED,y
-            ;sta Sprites_speed+6 ; DEBUG disabled otherwise you die too soon
-            jsr handle_double_hitbox
-            ; TODO sta Sprites_speed+6
-            rts
+;             lda $DC00           ; Joystick A in control port 2 0=active: 1=up 2=down 4=left 8=right 16=fire
+;             and $DC01           ; Joystick B in control port 1 0=active: 1=up 2=down 4=left 8=right 16=fire
+;             and #%00011111      ; ignore other bits not from the joystick
+;             tay ; backup
+;             and #$01
+;             bne +
+;             ; UP
+;             lda Spunk_Y
+;             sec
+;             sbc #$02
+;             cmp #MINY
+;             bcs .ok
+;             lda #MINY
+; .ok:        sta Spunk_Y
+; +           tya
+;             and #$02
+;             bne +
+;             ; DOWN
+;             lda Spunk_Y
+;             clc
+;             adc #$02
+;             cmp #MAXY
+;             bcc .ok2
+;             lda #MAXY
+; .ok2:       sta Spunk_Y
+; +           tya
+;             and #$10
+;             bne +
+;             ; FIRE
+;             inc Spunk_X ; DEBUG
+; +           cpy #%00011111
+;             bne anim_Spunk
+;             ; reset anim frame
+; reset_Spunk:ldx #FRAME_SPUNK_WALK
+;             lda #0
+;             beq .anim_ok ; jmp always
+; anim_Spunk: dec delay
+;             bpl .ok3
+;             ; animate enemy always
+;             lda Enemy_Ptr
+;             eor #1
+;             sta Enemy_Ptr
+;             lda #4  ; delay
+;             ldx Spunk_Ptr
+;             inx
+;             cpx #FRAME_SPUNK_JUMP
+;             bne .anim_ok
+;             ldx #FRAME_SPUNK_WALK
+; .anim_ok:   sta delay
+;             stx Spunk_Ptr
 
 ; X=x location (bits 8..1) A=Y location (150..220)
-handle_double_hitbox:
+; returns calculated speed in ZP_SPEED: >1=OK, 1=SLOW, 0=BLOCK
+handle_hitbox:
+            ldy #%11
+            sty ZP_SPEED
             sec
             sbc #TREETOPY + (SCROLL1Y-2)*8 - SPUNK_PY
             lsr
@@ -691,12 +742,12 @@ handle_collision:
             sbc #GROUNDOBJ_MINPROP-1 ; -1 to account for C=0
             bcc .not_interesting
             tax
-            lda groundobj_prop,x
-; TODO OBJ_BLOCK=0 ==> zero forward speed
-; TODO OBJ_SLOW=1 ==> halves forward speed (if there was any)
+            lda ZP_SPEED
+            and groundobj_prop,x
+            sta ZP_SPEED
 .not_interesting:
             rts
-.apple:     lda ZP_TEMP ; 0=Spunk 1=enemy
+.apple:     lda ZP_IS_SPUNK ; 0=Spunk 1=enemy
             bne destroy_apple
             jsr score_inc ; destroys A and X TODO only SPUNK
             ; fall-through
@@ -722,7 +773,7 @@ destroy_apple:
 ++          stx Objects3_X
             rts
 
-delay:      !byte 0
+;delay:      !byte 0 ; moved to ZP
 
 
 ;-------------------
@@ -827,7 +878,7 @@ draw_gameovertext:
             lda #WHITE
             sta $D800+GAMEOVERY*40+15,x
             dex
-            bne -
+            bpl -
             ; also draw new high score
             lda ZP_HIGHSCORE
             beq +
@@ -1014,7 +1065,7 @@ add_object:
             sta object_delay
             rts
 
-object_delay: !byte 0
+;object_delay: !byte 0  ; moved to ZP
 
 
 SCROLL1Y=15
@@ -1492,8 +1543,8 @@ Spunk_Ptr:  !byte 0
 
 Sprites_speed:
             !byte 0,0,0,0,0,0 ; trees
-            !byte 0 ; enemy
-            !byte 0 ; Spunk
+Enemy_speed:!byte 0 ; enemy
+Spunk_speed:!byte 0 ; Spunk
 
 
 ; X-offset of plants 8.8 fixed point .8 is sub-pixels speed, lowest 3 bits is X-scroll, highest 5 is char scroll (mod 11)
@@ -1570,6 +1621,10 @@ Y_TO_SPEED:
             !fill 20,SPEED1_TOP>>1 ; MINY
             !fill 16,SPEED2_MID>>1
             !fill 35,SPEED3_BOT>>1
+
+; 8 random speeds to choose from
+SPEED_AI_Y: !byte $FE,$FF,$FF,0,0,1,1,2
+
 
 ;----------------------------------------------------------------------------
 ; DATA distant background
