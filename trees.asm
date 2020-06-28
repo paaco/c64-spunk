@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 4038 bytes exomized -M256 -Di_perf=-1
+; 4094 bytes exomized -M256 -Di_perf=-1
 
 ; variables
 !addr {
@@ -26,7 +26,7 @@ getready = $33
 enemy_y_delta = $34     ; $01=down $FF=up
 enemy_timer = $35       ; random delay to change direction
 energy = $36            ; energy burst
-sleep_init = $38         ; reinit sleep counter
+sleep_init = $38        ; reinit sleep counter
 sleep_timer = $37       ; sleep countdown
 
 SPRITE_PTR = $07F8
@@ -53,10 +53,10 @@ MINY=150                ; min Y for actors (incl)
 MAXY=220                ; max Y for actors (incl)
 SPUNK_PY=9              ; sprite hit box Y offset
 SPUNK_PX=16             ; sprite hit box X offset
-ENEMY_WANTS_X = 100     ; max x-position/2 enemy AI wants to move to
+ENEMY_WANTS_X = 120     ; max x-position/2 enemy AI wants to move to
 SPUNK_WANTS_X = 100     ; max x-position/2 Spunk can move to
 MAX_ENERGY = 200        ; energy length
-MIN_SLEEP = 30          ; minimal sleep (increases per try) it's game over at approx 150
+MIN_SLEEP = 10          ; minimal sleep (increases per try) it's game over at approx 150
 SLEEP_INC = 1           ; sleep increase after burst
 
 ; animation frames
@@ -77,7 +77,7 @@ PURPLE=4 : GREEN=5 : BLUE=6 : YELLOW=7
 ORANGE=8 : BROWN=9 : LIGHT_RED=10 : DARK_GREY=11
 GREY=12 : LIGHT_GREEN=13 : LIGHT_BLUE=14 : LIGHT_GREY=15
 
-COLOR_BORDER = GREEN
+COLOR_BORDER = LIGHT_BLUE
 COLOR_SKY = BLUE
 COLOR_DISTANT = BLACK
 COLOR_BACKGROUND = BROWN
@@ -660,19 +660,23 @@ move_actors:
             ldy Spunk_Y
             lda Y_TO_SPEED,y
             sta Spunk_speed
-            ldx energy
-            bne .energy
-            dec sleep_timer
-            bne .no_energy
-            lda #MAX_ENERGY
-            sta energy
-.energy:
+            ; read joystick
             lda $DC00           ; Joystick A in control port 2 0=active: 1=up 2=down 4=left 8=right 16=fire
             and $DC01           ; Joystick B in control port 1 0=active: 1=up 2=down 4=left 8=right 16=fire
             and #%00011111      ; ignore other bits not from the joystick
             tay ; backup
-            and #$10
+            ldx energy
+            bne .energy
+            and #$10            ; don't touch joystick when out of energy!
+            beq .no_energy
+            dec sleep_timer
+            bne .no_energy
+            lda #MAX_ENERGY     ; restore energy
+            sta energy
+            tya
+.energy:    and #$10
             bne .spunk_no_FIRE
+            ; only when FIRE is pressed can you move UP or DOWN
             tya
             and #$01
             bne .spunk_no_UP
@@ -705,7 +709,6 @@ move_actors:
             clc
             adc #SLEEP_INC
             sta sleep_init
-            ; TODO init with FRAME_SPUNK_JUMP after sleep
             ; handle forward motion
 +           ldy Spunk_Y
             lda Y_TO_SPEED,y
@@ -725,7 +728,12 @@ move_actors:
             bcc +
             inc Spunk_X
 +           lda #0 ; no scroll speed
+            beq .sp_blocked ; always
 .sp_slow:   lsr
+            ldx #$CC
+            stx $D401+7
+            ldx #$81 ; gate-on
+            stx $D404+7
 .sp_blocked:sta Spunk_speed
 .no_energy:
 .spunk_no_FIRE:
@@ -740,11 +748,19 @@ animate_sprites:
             sta Enemy_Ptr
             lda energy
             beq reset_Spunk
-            ldx Spunk_Ptr
+            lda sleep_timer
+            bne +
+            inc sleep_timer
+            ldx #FRAME_SPUNK_JUMP
+            bne ++
++           ldx Spunk_Ptr
             inx
             cpx #FRAME_SPUNK_JUMP
-            bne +
+            bcc +
 reset_Spunk:ldx #FRAME_SPUNK_WALK
+++          lda #$10 ; gate-off
+            sta $D404+7
+            sta $D401+7
 +           lda #4  ; delay
             sta delay
             stx Spunk_Ptr
@@ -795,6 +811,11 @@ handle_collision:
 .apple:     lda ZP_IS_SPUNK ; 0=Spunk 1=enemy
             bne destroy_apple
             jsr score_inc ; destroys A and X TODO only SPUNK
+            ldx #$21 ; gate-on
+            stx $D401+7
+            stx $D404+7
+            ldx #$10 ; gate-off
+            stx $D404+7
             ; fall-through
 
 ; destroy apple on screen and in object array; destroys A and X; returns <>0 in X

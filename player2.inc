@@ -104,8 +104,9 @@ music_init:
 
 ; $18 bytes SID init
 music_SID_init:
+        ; FL,FH,PL,PH,WF,AD,SR
         !byte 0,0,0,0,0,0,0
-        !byte 0,0,0,0,0,0,0
+        !byte 0,0,0,0,0,$00,$84 ; sfx
         !byte 0,0,0,0,0,0,0
         FILTER=100
         !byte (FILTER & $F)     ; filter cutoff bits 3-0
