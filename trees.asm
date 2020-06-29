@@ -1,7 +1,7 @@
 ;
 ; trees
 ;
-; 4094 bytes exomized -M256 -Di_perf=-1
+; 4089 bytes exomized -M256 -Di_perf=-1
 
 ; variables
 !addr {
