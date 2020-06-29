@@ -1741,7 +1741,7 @@ introtext:
 !scr "                                        "
 !scr "      by alexander ",34,"paaco",34," paalvast     "
 !scr "                                        "
-!scr "      (c) 2020 twa",129,"n pa",129,"n software      "
+!scr "        (c) 2020 twa",129,"n pa",129,"n games       "
 introtext_end:
 
 getreadytext:
