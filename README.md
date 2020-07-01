@@ -1,38 +1,41 @@
-# c64-trees
+# SPUNK V.S. THE REST
 
-### Trees
+Spunk is a purple skunk that brags to his friends about how good he is
+at picking up apples while running through the forest.
 
-There are a maximum of 6 trees on screen, consisting of 5 sprites each.
-With y-expanding, they fill the entire screen.
-The upper 2 sprites are x-expanded making them even larger.
+Each game is played randomly against one of his many Bear, Elephant, Fox
+and Swine friends. They will try to pick up the apples before he does.
 
-If the sprites are consecutive in memory, you only need 1 byte of PTR and inc them each IRQ.
+![screen shot](/assets/spunk.png "Screen shot")
 
-Note that there are 2 player sprites that are weaved in between the 6 tree sprites because of priority.
+## CONTROLS
 
-There are a number of IRQs:
+Grab either joystick and press FIRE to start the game.
 
-1. Set up all 8 sprites X, Y, ptrs and X- and Y- expansion (all but the player sprites) outside of the visible screen.
+Hold FIRE to run and press UP or DOWN to move while running.
 
-2. Updates tree sprite ptrs and their Y offset.
+Avoid rocks and branches and steer away from the vines as they will slow you down.
 
-3. Updates tree sprite ptrs and their Y offset. Switch off x-expansion for the trees and fix their X-positions.
+After a while Spunk will get tired and needs to rest a bit.
+Release the FIRE button and wait a short while before pressing it again.
+Note that Spunk gets more tired as time goes by.
 
-4. TODO
+The game ends when either Spunk or his friend falls too much behind.
+
+HOW MANY APPLES CAN YOU GRAB?
 
 
-### Assets
 
-Assets are drawn in Aseprite and saved as .png file. Custom converter Sprite2asm converts the png file based on instructions in the filename:
+## CREDITS
 
-    -bgX specifies background color (defaults to transparent color index) and forces hires
-    -mcXY specifies multi color 1 (X) and 2 (Y) and forces multi color
-    -chXX specifies to create charset and charmap (bytes start at XX) instead of sprites
+All programming, graphics and sound by Alexander "paaco" Paalvast.
 
-Note that multicolor bits are interpreted differently for sprites and characters:
+This game was submitted to the "2020 Reset64 4KB Craptastic Game Competition"
+and may be distributed freely.
 
-        bits    00        01         10         11
-    sprites     BG:$D021  MC1:$D025  $D027+     MC2:$D026
-    chars       BG:$D021  MC1:$D022  MC2:$D023  $D800+
 
-Sprites will always cover character/bitmap bits 00 and 01 (bit 0 for hires). However, sprites with 'lower' priority (their bit is set to 1 in $D01B) will be covered by bits 10 and 11 (bit 1 for hires).
+
+## INGREDIENTS
+
+This product expands to approximately 2560 bytes code, 2304 bytes raw data and
+3072 bytes graphics when soaked into water.
