@@ -804,13 +804,13 @@ handle_collision:
             bcc .not_interesting
             tax
             lda ZP_SPEED
-            and groundobj_prop,x
+            and groundobj_prop,x ; DEBUG comment this line to disable collisions
             sta ZP_SPEED
 .not_interesting:
             rts
 .apple:     lda ZP_IS_SPUNK ; 0=Spunk 1=enemy
             bne destroy_apple
-            jsr score_inc ; destroys A and X TODO only SPUNK
+            jsr score_inc ; destroys A and X
             ldx #$21 ; gate-on
             stx $D401+7
             stx $D404+7
@@ -1086,6 +1086,9 @@ add_object:
             sta Objects1_X,x
 ++
 .add_object2:
+            jsr random
+            and #$07 ; make sure < MAX_OBJECTS
+            tax ; x=object
             lda Objects2_X,x
             bne ++ ; used
             ; check for room (bottom part of screen row)
@@ -1107,6 +1110,9 @@ add_object:
             sta Objects2_X,x
 ++
 .add_object3:
+            jsr random
+            and #$07 ; make sure < MAX_OBJECTS
+            tax ; x=object
             lda Objects3_X,x
             bne ++ ; used
             ; check for room (bottom part of screen row)
@@ -1849,7 +1855,7 @@ SCREENROWH:
 ;----------------------------------------------------------------------------
 ; SPRITES
 ;----------------------------------------------------------------------------
-            !align 63,0
+            !align 63,0,0
 
 SPRITE_OFFSET = (sprites and $3FFF) >> 6
 sprites:
